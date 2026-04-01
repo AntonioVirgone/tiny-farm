@@ -254,12 +254,13 @@ const generateInitialGrid = (): Cell[] => {
     if (type === 'grass') emptyGrassCells.push(i);
   }
 
-  for (let k = 0; k < 6; k++) {
+  // Inizializza gli animali in unità singole
+  for (let k = 0; k < 8; k++) {
     if (emptyGrassCells.length === 0) break;
     const randIndex = Math.floor(Math.random() * emptyGrassCells.length);
     const cellId = emptyGrassCells[randIndex];
     grid[cellId].type = 'wild_animal';
-    grid[cellId].wildAnimalCount = 2;
+    grid[cellId].wildAnimalCount = 1;
     emptyGrassCells.splice(randIndex, 1);
   }
 
@@ -625,11 +626,8 @@ const App: React.FC = () => {
 
         // 3. GESTIONE ANIMALI SELVATICI (RIPRODUZIONE)
         if (updatedCell.type === 'wild_animal') {
-          const count = updatedCell.wildAnimalCount || 0;
-          if (count <= 1 && !updatedCell.busyUntil) {
-            updatedCell = { ...updatedCell, type: 'grass', wildAnimalCount: undefined, wildReproductionTargetTime: undefined };
-            cellModified = true;
-          } else if (count >= 2 && count < 10) {
+          const count = updatedCell.wildAnimalCount || 1;
+          if (count >= 2 && count < 10) {
             if (!updatedCell.wildReproductionTargetTime) {
               updatedCell = { ...updatedCell, wildReproductionTargetTime: currentTime + 50000 };
               cellModified = true;
@@ -637,7 +635,10 @@ const App: React.FC = () => {
               updatedCell = { ...updatedCell, wildAnimalCount: count + 1, wildReproductionTargetTime: (count + 1) < 10 ? currentTime + 50000 : null };
               cellModified = true;
             }
-          } else if (updatedCell.wildReproductionTargetTime) {
+          } else if (updatedCell.wildReproductionTargetTime && count < 2) {
+            updatedCell = { ...updatedCell, wildReproductionTargetTime: null };
+            cellModified = true;
+          } else if (count >= 10 && updatedCell.wildReproductionTargetTime) {
             updatedCell = { ...updatedCell, wildReproductionTargetTime: null };
             cellModified = true;
           }
@@ -720,12 +721,21 @@ const App: React.FC = () => {
 
           else if (updatedCell.pendingAction === 'hunting') {
             newType = 'wild_animal';
+            let wildCount = updatedCell.wildAnimalCount || 1;
             const roll = Math.random() * 100;
             if (roll < 15) {
               newlyDeadFarmers += 1;
             } else if (roll < 35) {
               addReward('wildMeat', 1);
-              wildAnimalCount = (wildAnimalCount || 0) - 1;
+              wildCount -= 1;
+            }
+
+            if (wildCount <= 0) {
+              newType = 'grass';
+              wildAnimalCount = undefined;
+              updatedCell.wildReproductionTargetTime = undefined;
+            } else {
+              wildAnimalCount = wildCount;
             }
           }
 
@@ -740,20 +750,46 @@ const App: React.FC = () => {
         return updatedCell;
       });
 
-      // --- NUOVO: Movimento degli Animali Selvatici ---
+      // --- MOVIMENTO E FUSIONE DEGLI ANIMALI SELVATICI ---
       const movedTo = new Set<number>();
       for (let i = 0; i < newGrid.length; i++) {
         const cell = newGrid[i];
-        // L'animale può muoversi solo se non è bloccato (es. non sta subendo una caccia)
         if (cell.type === 'wild_animal' && !movedTo.has(i) && !cell.busyUntil && cell.pendingAction === null) {
-          // C'è una probabilità del 2% ad ogni tick (100ms) che l'animale si muova, risultando in un movimento lento e organico
-          if (Math.random() < 0.02) {
-            const neighbors = [];
-            if (i >= 8) neighbors.push(i - 8);
-            if (i < 56) neighbors.push(i + 8);
-            if (i % 8 !== 0) neighbors.push(i - 1);
-            if ((i + 1) % 8 !== 0) neighbors.push(i + 1);
 
+          const neighbors = [];
+          if (i >= 8) neighbors.push(i - 8);
+          if (i < 56) neighbors.push(i + 8);
+          if (i % 8 !== 0) neighbors.push(i - 1);
+          if ((i + 1) % 8 !== 0) neighbors.push(i + 1);
+
+          // Controlla fusione con altri animali
+          const mergeTarget = neighbors.find(n =>
+              newGrid[n].type === 'wild_animal' &&
+              !newGrid[n].busyUntil &&
+              newGrid[n].pendingAction === null &&
+              !movedTo.has(n)
+          );
+
+          if (mergeTarget !== undefined) {
+            const totalCount = Math.min(10, (cell.wildAnimalCount || 1) + (newGrid[mergeTarget].wildAnimalCount || 1));
+            newGrid[mergeTarget] = {
+              ...newGrid[mergeTarget],
+              wildAnimalCount: totalCount
+            };
+            newGrid[i] = {
+              ...newGrid[i],
+              type: 'grass',
+              wildAnimalCount: undefined,
+              wildReproductionTargetTime: undefined
+            };
+            movedTo.add(mergeTarget);
+            movedTo.add(i);
+            gridChanged = true;
+            continue;
+          }
+
+          // Movimento
+          if (Math.random() < 0.02) {
             const validNeighbors = neighbors.filter(n =>
                 newGrid[n].type === 'grass' &&
                 !newGrid[n].busyUntil &&
@@ -762,24 +798,20 @@ const App: React.FC = () => {
 
             if (validNeighbors.length > 0) {
               const target = validNeighbors[Math.floor(Math.random() * validNeighbors.length)];
-
-              // Sposta l'animale nella nuova cella
               newGrid[target] = {
                 ...newGrid[target],
                 type: 'wild_animal',
                 wildAnimalCount: cell.wildAnimalCount,
                 wildReproductionTargetTime: cell.wildReproductionTargetTime
               };
-
-              // Libera la cella precedente
               newGrid[i] = {
                 ...newGrid[i],
                 type: 'grass',
                 wildAnimalCount: undefined,
                 wildReproductionTargetTime: undefined
               };
-
               movedTo.add(target);
+              movedTo.add(i);
               gridChanged = true;
             }
           }
@@ -1158,9 +1190,11 @@ const App: React.FC = () => {
         return (
             <div style={{ position: 'relative' }}>
               <Rabbit size={28} color="#78350f" fill="#b45309" />
-              <div style={{position:'absolute', bottom: -5, right: -5, background: 'white', borderRadius: '50%', padding: '2px', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'10px', fontWeight:'bold', border:'1px solid #ccc', color: '#b45309', width: '16px', height: '16px'}}>
-                {cell.wildAnimalCount}
-              </div>
+              {cell.wildAnimalCount! > 1 && (
+                  <div style={{position:'absolute', bottom: -5, right: -5, background: 'white', borderRadius: '50%', padding: '2px', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'10px', fontWeight:'bold', border:'1px solid #ccc', color: '#b45309', width: '16px', height: '16px'}}>
+                    {cell.wildAnimalCount}
+                  </div>
+              )}
             </div>
         );
       default: return null;
@@ -1597,9 +1631,12 @@ const App: React.FC = () => {
                         {activeCell.type === 'wild_animal' && (
                             <div style={{ textAlign: 'center', padding: '10px', color: '#64748b' }}>
                               <Rabbit size={40} color="#b45309" style={{ margin: '0 auto 10px' }} />
-                              <div style={{fontSize: '18px', fontWeight: 'bold', color: '#1e293b'}}>Branco Selvatico: {activeCell.wildAnimalCount} / 10</div>
+                              <div style={{fontSize: '18px', fontWeight: 'bold', color: '#1e293b'}}>
+                                {activeCell.wildAnimalCount === 1 ? 'Animale Solitario' : `Branco Selvatico: ${activeCell.wildAnimalCount} / 10`}
+                              </div>
                               <div style={{fontSize: '13px', margin: '10px 0 20px'}}>
-                                {activeCell.wildAnimalCount! >= 2 && activeCell.wildAnimalCount! < 10 ? "Si stanno riproducendo passivamente (50s)..." : activeCell.wildAnimalCount! >= 10 ? "Capacità massima del branco raggiunta!" : "Il branco sta scomparendo..."}
+                                {activeCell.wildAnimalCount === 1 ? "Cerca un compagno per riprodursi..." :
+                                    activeCell.wildAnimalCount! >= 2 && activeCell.wildAnimalCount! < 10 ? "Si stanno riproducendo passivamente (50s)..." : "Capacità massima del branco raggiunta!"}
                               </div>
                               <button className="action-btn" style={{background: '#c2410c', color: 'white'}} disabled={availableFarmers < 2} onClick={() => startAction(activeCell.id, 'hunting')}>
                                 <Crosshair size={20} /> Caccia ({(ACTION_TIMES.hunting/1000)}s)
