@@ -307,7 +307,6 @@ const App: React.FC = () => {
     if (gameState !== 'playing') return;
 
     const eventInterval = setInterval(() => {
-      // Usiamo i Ref per evitare che l'intervallo di 45s si resetti ad ogni click dell'utente
       const currentGrid = gridRef.current;
       const currentRespawning = respawningRef.current;
 
@@ -325,18 +324,11 @@ const App: React.FC = () => {
       let eventTriggered = false;
       let eventMessage = "";
 
-      // 1. Malattia Improvvisa (Scala: 1 pop = 5%, 20 pop = ~90%)
-      // Formula: 0.05 + ((popolazione - 1) * 0.0447)
       const diseaseProb = Math.min(0.90, 0.05 + (currentTotalFarmers - 1) * 0.0447);
-
-      // 2. Attacco Lupi (Solo se NON ci sono animali selvatici da cacciare)
       const hasWildAnimals = currentGrid.some(c => c.type === 'wild_animal');
-      const wolvesProb = !hasWildAnimals ? 0.40 : 0; // 40% di probabilità se affamati
+      const wolvesProb = !hasWildAnimals ? 0.40 : 0;
+      const banditsProb = currentPorts > 0 ? 0.30 : 0;
 
-      // 3. Attacco Banditi (Solo se è stato costruito il porto)
-      const banditsProb = currentPorts > 0 ? 0.30 : 0; // 30% di probabilità se c'è un porto
-
-      // Sequenza di probabilità (massimo un evento negativo ogni 45s)
       if (Math.random() < diseaseProb) {
         eventTriggered = true;
         eventMessage = "Un'improvvisa malattia ha colpito un cittadino!";
@@ -360,7 +352,7 @@ const App: React.FC = () => {
     }, 45000);
 
     return () => clearInterval(eventInterval);
-  }, [gameState]); // Rimosso totalFarmers dalle dipendenze per non resettare il timer!
+  }, [gameState]);
 
   const resetGame = () => {
     setInventory(INITIAL_INVENTORY);
@@ -587,7 +579,7 @@ const App: React.FC = () => {
             if (dropRoll < 7) addReward('gold', 1);
             else if (dropRoll < 14) addReward('copper', 1);
             else if (dropRoll < 21) addReward('iron', 1);
-            else addReward('stone', 1);
+            else                     addReward('stone', 1);
 
             const newTicks = (updatedCell.mineTicks || 0) + 1;
             if (newTicks >= 12) {
@@ -631,7 +623,7 @@ const App: React.FC = () => {
           }
         }
 
-        // 3. GESTIONE ANIMALI SELVATICI
+        // 3. GESTIONE ANIMALI SELVATICI (RIPRODUZIONE)
         if (updatedCell.type === 'wild_animal') {
           const count = updatedCell.wildAnimalCount || 0;
           if (count <= 1 && !updatedCell.busyUntil) {
@@ -747,6 +739,52 @@ const App: React.FC = () => {
         if (cellModified) gridChanged = true;
         return updatedCell;
       });
+
+      // --- NUOVO: Movimento degli Animali Selvatici ---
+      const movedTo = new Set<number>();
+      for (let i = 0; i < newGrid.length; i++) {
+        const cell = newGrid[i];
+        // L'animale può muoversi solo se non è bloccato (es. non sta subendo una caccia)
+        if (cell.type === 'wild_animal' && !movedTo.has(i) && !cell.busyUntil && cell.pendingAction === null) {
+          // C'è una probabilità del 2% ad ogni tick (100ms) che l'animale si muova, risultando in un movimento lento e organico
+          if (Math.random() < 0.02) {
+            const neighbors = [];
+            if (i >= 8) neighbors.push(i - 8);
+            if (i < 56) neighbors.push(i + 8);
+            if (i % 8 !== 0) neighbors.push(i - 1);
+            if ((i + 1) % 8 !== 0) neighbors.push(i + 1);
+
+            const validNeighbors = neighbors.filter(n =>
+                newGrid[n].type === 'grass' &&
+                !newGrid[n].busyUntil &&
+                newGrid[n].pendingAction === null
+            );
+
+            if (validNeighbors.length > 0) {
+              const target = validNeighbors[Math.floor(Math.random() * validNeighbors.length)];
+
+              // Sposta l'animale nella nuova cella
+              newGrid[target] = {
+                ...newGrid[target],
+                type: 'wild_animal',
+                wildAnimalCount: cell.wildAnimalCount,
+                wildReproductionTargetTime: cell.wildReproductionTargetTime
+              };
+
+              // Libera la cella precedente
+              newGrid[i] = {
+                ...newGrid[i],
+                type: 'grass',
+                wildAnimalCount: undefined,
+                wildReproductionTargetTime: undefined
+              };
+
+              movedTo.add(target);
+              gridChanged = true;
+            }
+          }
+        }
+      }
 
       if (gridChanged) {
         setGrid(newGrid);
