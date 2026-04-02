@@ -1591,6 +1591,8 @@ const App: React.FC = () => {
     return () => { document.head.removeChild(styleTag); };
   }, []);
 
+  const firstIncompleteQuestIndex = ALL_QUESTS.findIndex(q => !completedQuests.includes(q.id));
+
   if (gameState === 'start') {
     return (
         <div className="fullscreen-menu">
