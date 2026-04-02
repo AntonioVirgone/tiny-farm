@@ -6,7 +6,7 @@ import {
   Droplets, Fish, Factory, Box, Layers, Rabbit, Crosshair, Bone, Gem,
   Ship, Anchor, Lock, Castle, Landmark, Skull, CloudFog, Package,
   BookMarked, CheckCircle, AlertTriangle, Play, Leaf, Save, Info, Download, Upload,
-  Settings, LogOut
+  Settings, LogOut, Sun, Moon, CalendarDays, Zap
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
@@ -316,6 +316,11 @@ const App: React.FC = () => {
   const [hasSave, setHasSave] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
+  // NUOVI STATI PER IL GIORNO/NOTTE E AZIONI
+  const [dayCount, setDayCount] = useState<number>(1);
+  const [isNight, setIsNight] = useState<boolean>(false);
+  const [actionsUsedToday, setActionsUsedToday] = useState<number>(0);
+
   const [inventory, setInventory] = useState<Inventory>(INITIAL_INVENTORY);
   const [unlocked, setUnlocked] = useState<UnlockedBuildings>(INITIAL_UNLOCKED);
 
@@ -338,10 +343,10 @@ const App: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Salva lo stato completo in un ref per il salvataggio automatico senza dipendenze continue
-  const stateRef = useRef({ inventory, unlocked, grid, completedQuests, respawningFarmers });
+  const stateRef = useRef({ inventory, unlocked, grid, completedQuests, respawningFarmers, dayCount, actionsUsedToday });
   useEffect(() => {
-    stateRef.current = { inventory, unlocked, grid, completedQuests, respawningFarmers };
-  }, [inventory, unlocked, grid, completedQuests, respawningFarmers]);
+    stateRef.current = { inventory, unlocked, grid, completedQuests, respawningFarmers, dayCount, actionsUsedToday };
+  }, [inventory, unlocked, grid, completedQuests, respawningFarmers, dayCount, actionsUsedToday]);
 
   // --- GESTIONE FIREBASE (AUTENTICAZIONE) ---
   useEffect(() => {
@@ -387,14 +392,21 @@ const App: React.FC = () => {
     checkCloudSave();
   }, [user]);
 
-  // --- LOGICA CITTADINI E NAVI ---
+  // --- LOGICA CITTADINI E AZIONI DISPONIBILI ---
   const totalPorts = grid.filter(c => c.type === 'port').length;
   const baseFarmers =
       grid.filter(c => c.type === 'house').length * 1 +
       grid.filter(c => c.type === 'village').length * 6 +
       grid.filter(c => c.type === 'city').length * 30 +
       grid.filter(c => c.type === 'county').length * 100;
+
   const totalFarmers = Math.max(0, baseFarmers - (totalPorts * COSTS.port.farmers) - respawningFarmers.length);
+
+  // AZIONI RIMANENTI OGGI
+  const actionsLeft = Math.max(0, totalFarmers - actionsUsedToday);
+  const totalAnimals = grid.reduce((sum, cell) => sum + (cell.animalCount || 0), 0);
+  const busyShips = grid.filter(c => c.pendingAction === 'fishing').length;
+  const availableShips = totalPorts - busyShips;
 
   // Gestione del Game Over
   useEffect(() => {
@@ -412,7 +424,9 @@ const App: React.FC = () => {
       unlocked: stateRef.current.unlocked,
       grid: JSON.stringify(stateRef.current.grid),
       completedQuests: stateRef.current.completedQuests,
-      respawningFarmers: JSON.stringify(stateRef.current.respawningFarmers)
+      respawningFarmers: JSON.stringify(stateRef.current.respawningFarmers),
+      dayCount: stateRef.current.dayCount,
+      actionsUsedToday: stateRef.current.actionsUsedToday
     };
 
     // Salva sempre in locale come backup
@@ -443,7 +457,7 @@ const App: React.FC = () => {
   };
 
   const handleLoadGame = async () => {
-    let loadedData = null;
+    let loadedData: any = null;
 
     // Prova prima dal cloud se utente connesso
     if (user && db) {
@@ -473,6 +487,9 @@ const App: React.FC = () => {
       setGrid(JSON.parse(loadedData.grid));
       setCompletedQuests(loadedData.completedQuests || []);
       setRespawningFarmers(JSON.parse(loadedData.respawningFarmers || '[]'));
+      setDayCount(loadedData.dayCount || 1);
+      setActionsUsedToday(loadedData.actionsUsedToday || 0);
+      setIsNight(false);
       setGameState('playing');
       setTimeout(() => setToasts(prev => prev.filter(t => t.id !== 'load-local')), 3000);
     } else {
@@ -482,13 +499,14 @@ const App: React.FC = () => {
   };
 
   const handleExportSave = () => {
-    // Peschiamo i dati sempre dallo stateRef per garantire che esportiamo l'ultimo stato (anche senza aver cliccato "Salva")
     const saveData = {
       inventory: stateRef.current.inventory,
       unlocked: stateRef.current.unlocked,
       grid: JSON.stringify(stateRef.current.grid),
       completedQuests: stateRef.current.completedQuests,
-      respawningFarmers: JSON.stringify(stateRef.current.respawningFarmers)
+      respawningFarmers: JSON.stringify(stateRef.current.respawningFarmers),
+      dayCount: stateRef.current.dayCount,
+      actionsUsedToday: stateRef.current.actionsUsedToday
     };
     const blob = new Blob([JSON.stringify(saveData, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -520,6 +538,9 @@ const App: React.FC = () => {
         setGrid(JSON.parse(loadedData.grid));
         setCompletedQuests(loadedData.completedQuests || []);
         setRespawningFarmers(JSON.parse(loadedData.respawningFarmers || '[]'));
+        setDayCount(loadedData.dayCount || 1);
+        setActionsUsedToday(loadedData.actionsUsedToday || 0);
+        setIsNight(false);
 
         // Aggiorna anche il salvataggio locale per comodità
         localStorage.setItem('fattoria_avanzata_save', JSON.stringify(loadedData));
@@ -601,6 +622,27 @@ const App: React.FC = () => {
     return () => clearInterval(eventInterval);
   }, [gameState]);
 
+  // --- TRANSIZIONE GIORNO/NOTTE ---
+  const endDay = () => {
+    setIsNight(true);
+    setSelectedCell(null);
+    setTimeout(() => {
+      setIsNight(false);
+      setDayCount(d => d + 1);
+      setActionsUsedToday(0);
+    }, 5000); // La notte dura 5 secondi
+  };
+
+  // Auto-Notte quando finiscono le azioni
+  useEffect(() => {
+    if (actionsLeft <= 0 && !isNight && totalFarmers > 0 && gameState === 'playing') {
+      const t = setTimeout(() => {
+        endDay();
+      }, 1500); // Piccola pausa prima che cali la notte
+      return () => clearTimeout(t);
+    }
+  }, [actionsLeft, isNight, totalFarmers, gameState]);
+
   const startNewGame = () => {
     setInventory(INITIAL_INVENTORY);
     setUnlocked(INITIAL_UNLOCKED);
@@ -608,6 +650,9 @@ const App: React.FC = () => {
     setRespawningFarmers([]);
     setCompletedQuests([]);
     setUnreadQuests(0);
+    setDayCount(1);
+    setActionsUsedToday(0);
+    setIsNight(false);
     setToasts([]);
     setSelectedCell(null);
     setGameState('playing');
@@ -649,17 +694,6 @@ const App: React.FC = () => {
   useEffect(() => {
     respawningRef.current = respawningFarmers;
   }, [respawningFarmers]);
-
-  const busyFarmers = grid.reduce((sum, c) => {
-    if (c.pendingAction && c.pendingAction !== 'growing' && c.pendingAction !== 'active_mine' && c.pendingAction !== 'fishing' && c.pendingAction !== 'active_forest') {
-      return sum + (c.farmersUsed || 1);
-    }
-    return sum;
-  }, 0);
-  const availableFarmers = totalFarmers - busyFarmers;
-  const totalAnimals = grid.reduce((sum, cell) => sum + (cell.animalCount || 0), 0);
-  const busyShips = grid.filter(c => c.pendingAction === 'fishing').length;
-  const availableShips = totalPorts - busyShips;
 
   // --- ALGORITMO DI ESPLORAZIONE CON NEBBIA ---
   const reachableCells = useMemo(() => {
@@ -1105,9 +1139,12 @@ const App: React.FC = () => {
 
   // --- AZIONI GIOCATORE ---
   const startAction = (cellId: number, action: ActionType) => {
+    if (isNight) return;
+
     const cell = grid.find(c => c.id === cellId);
     if (!cell) return;
 
+    // Le navi non consumano azioni dei cittadini
     if (action === 'fishing') {
       if (availableShips < 1) return;
       setGrid(prev => prev.map(c => c.id === cellId ? { ...c, pendingAction: action, lastTickTime: Date.now(), fishingTicks: 0 } : c));
@@ -1115,12 +1152,23 @@ const App: React.FC = () => {
       return;
     }
 
-    if (availableFarmers < 1) return;
+    // Determina il costo in azioni (uguale al numero di cittadini richiesti)
+    let costFarmers = 1;
+    if (action === 'hunting') costFarmers = 2;
+    else if (action?.startsWith('building_')) {
+      const buildingType = action.replace('building_', '');
+      costFarmers = COSTS[buildingType as keyof typeof COSTS]?.farmers || 1;
+    }
+    else if (action === 'planting_tree') costFarmers = COSTS.tree.farmers;
+    else if (action === 'planting_forest') costFarmers = COSTS.forest.farmers;
+    else if (action === 'spawn_rock') costFarmers = COSTS.rock.farmers;
+
+    if (actionsLeft < costFarmers) return;
 
     if (action === 'hunting') {
-      if (availableFarmers < 2) return;
       const duration = ACTION_TIMES.hunting;
-      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: 2 } : c));
+      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers } : c));
+      setActionsUsedToday(prev => prev + costFarmers);
       setSelectedCell(null);
       return;
     }
@@ -1129,36 +1177,40 @@ const App: React.FC = () => {
       if (inventory.wood < COSTS.house.wood || inventory.stone < COSTS.house.stone) return;
       setInventory(prev => ({ ...prev, wood: prev.wood - COSTS.house.wood, stone: prev.stone - COSTS.house.stone }));
       const duration = ACTION_TIMES.building_house;
-      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: COSTS.house.farmers } : c));
+      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers } : c));
+      setActionsUsedToday(prev => prev + costFarmers);
       setSelectedCell(null);
       return;
     }
 
     if (action === 'building_port') {
       const futureTotalFarmers = baseFarmers - ((totalPorts + 1) * COSTS.port.farmers) - respawningFarmers.length;
-      if (inventory.wood < COSTS.port.wood || inventory.stone < COSTS.port.stone || inventory.coins < COSTS.port.coins || availableFarmers < COSTS.port.farmers || futureTotalFarmers < 1) return;
+      if (inventory.wood < COSTS.port.wood || inventory.stone < COSTS.port.stone || inventory.coins < COSTS.port.coins || futureTotalFarmers < 1) return;
 
       setInventory(prev => ({ ...prev, wood: prev.wood - COSTS.port.wood, stone: prev.stone - COSTS.port.stone, coins: prev.coins - COSTS.port.coins }));
       const duration = ACTION_TIMES.building_port;
-      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: COSTS.port.farmers } : c));
+      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers } : c));
+      setActionsUsedToday(prev => prev + costFarmers);
       setSelectedCell(null);
       return;
     }
 
     if (action === 'building_lumber_mill') {
-      if (inventory.wood < COSTS.lumber_mill.wood || inventory.stone < COSTS.lumber_mill.stone || inventory.coins < COSTS.lumber_mill.coins || availableFarmers < COSTS.lumber_mill.farmers) return;
+      if (inventory.wood < COSTS.lumber_mill.wood || inventory.stone < COSTS.lumber_mill.stone || inventory.coins < COSTS.lumber_mill.coins) return;
       setInventory(prev => ({ ...prev, wood: prev.wood - COSTS.lumber_mill.wood, stone: prev.stone - COSTS.lumber_mill.stone, coins: prev.coins - COSTS.lumber_mill.coins }));
       const duration = ACTION_TIMES.building_lumber_mill;
-      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: COSTS.lumber_mill.farmers } : c));
+      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers } : c));
+      setActionsUsedToday(prev => prev + costFarmers);
       setSelectedCell(null);
       return;
     }
 
     if (action === 'building_stone_mason') {
-      if (inventory.wood < COSTS.stone_mason.wood || inventory.stone < COSTS.stone_mason.stone || inventory.coins < COSTS.stone_mason.coins || availableFarmers < COSTS.stone_mason.farmers) return;
+      if (inventory.wood < COSTS.stone_mason.wood || inventory.stone < COSTS.stone_mason.stone || inventory.coins < COSTS.stone_mason.coins) return;
       setInventory(prev => ({ ...prev, wood: prev.wood - COSTS.stone_mason.wood, stone: prev.stone - COSTS.stone_mason.stone, coins: prev.coins - COSTS.stone_mason.coins }));
       const duration = ACTION_TIMES.building_stone_mason;
-      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: COSTS.stone_mason.farmers } : c));
+      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers } : c));
+      setActionsUsedToday(prev => prev + costFarmers);
       setSelectedCell(null);
       return;
     }
@@ -1167,7 +1219,8 @@ const App: React.FC = () => {
       if (inventory.wood < 2) return;
       setInventory(prev => ({ ...prev, wood: prev.wood - 2 }));
       const duration = ACTION_TIMES.crafting;
-      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: 1 } : c));
+      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers } : c));
+      setActionsUsedToday(prev => prev + costFarmers);
       setSelectedCell(null);
       return;
     }
@@ -1176,103 +1229,112 @@ const App: React.FC = () => {
       if (inventory.stone < 2) return;
       setInventory(prev => ({ ...prev, stone: prev.stone - 2 }));
       const duration = ACTION_TIMES.crafting;
-      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: 1 } : c));
+      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers } : c));
+      setActionsUsedToday(prev => prev + costFarmers);
       setSelectedCell(null);
       return;
     }
 
     if (action === 'building_mine') {
-      if (inventory.wood < COSTS.mine.wood || inventory.coins < COSTS.mine.coins || availableFarmers < COSTS.mine.farmers) return;
+      if (inventory.wood < COSTS.mine.wood || inventory.coins < COSTS.mine.coins) return;
       setInventory(prev => ({ ...prev, wood: prev.wood - COSTS.mine.wood, coins: prev.coins - COSTS.mine.coins }));
       const duration = ACTION_TIMES.building_mine;
-      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: COSTS.mine.farmers } : c));
+      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers } : c));
+      setActionsUsedToday(prev => prev + costFarmers);
       setSelectedCell(null);
       return;
     }
 
     if (action === 'building_animal_farm') {
-      if (inventory.wheat < COSTS.animal_farm.wheat || inventory.wood < COSTS.animal_farm.wood || inventory.stone < COSTS.animal_farm.stone || inventory.coins < COSTS.animal_farm.coins || availableFarmers < COSTS.animal_farm.farmers) return;
+      if (inventory.wheat < COSTS.animal_farm.wheat || inventory.wood < COSTS.animal_farm.wood || inventory.stone < COSTS.animal_farm.stone || inventory.coins < COSTS.animal_farm.coins) return;
       setInventory(prev => ({ ...prev, wheat: prev.wheat - COSTS.animal_farm.wheat, wood: prev.wood - COSTS.animal_farm.wood, stone: prev.stone - COSTS.animal_farm.stone, coins: prev.coins - COSTS.animal_farm.coins }));
       const duration = ACTION_TIMES.building_animal_farm;
-      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: COSTS.animal_farm.farmers } : c));
+      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers } : c));
+      setActionsUsedToday(prev => prev + costFarmers);
       setSelectedCell(null);
       return;
     }
 
     if (action === 'building_village') {
       const targetCells = getMergeableCells(cellId, 'house');
-      if (!targetCells || inventory.coins < COSTS.village.coins || availableFarmers < COSTS.village.farmers) return;
+      if (!targetCells || inventory.coins < COSTS.village.coins) return;
       setInventory(prev => ({ ...prev, coins: prev.coins - COSTS.village.coins }));
       const duration = ACTION_TIMES.building_village;
       setGrid(prev => prev.map(c => {
         if (c.id === cellId) {
-          return { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: COSTS.village.farmers };
+          return { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers };
         } else if (targetCells.includes(c.id)) {
           return { ...c, type: 'grass', pendingAction: null, busyUntil: null, busyTotalDuration: null, farmersUsed: undefined };
         }
         return c;
       }));
+      setActionsUsedToday(prev => prev + costFarmers);
       setSelectedCell(null);
       return;
     }
 
     if (action === 'building_city') {
       const targetCells = getMergeableCells(cellId, 'village');
-      if (!targetCells || inventory.coins < COSTS.city.coins || availableFarmers < COSTS.city.farmers) return;
+      if (!targetCells || inventory.coins < COSTS.city.coins) return;
       setInventory(prev => ({ ...prev, coins: prev.coins - COSTS.city.coins }));
       const duration = ACTION_TIMES.building_city;
       setGrid(prev => prev.map(c => {
         if (c.id === cellId) {
-          return { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: COSTS.city.farmers };
+          return { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers };
         } else if (targetCells.includes(c.id)) {
           return { ...c, type: 'grass', pendingAction: null, busyUntil: null, busyTotalDuration: null, farmersUsed: undefined };
         }
         return c;
       }));
+      setActionsUsedToday(prev => prev + costFarmers);
       setSelectedCell(null);
       return;
     }
 
     if (action === 'building_county') {
       const targetCells = getMergeableCells(cellId, 'city');
-      if (!targetCells || inventory.coins < COSTS.county.coins || availableFarmers < COSTS.county.farmers) return;
+      if (!targetCells || inventory.coins < COSTS.county.coins) return;
       setInventory(prev => ({ ...prev, coins: prev.coins - COSTS.county.coins }));
       const duration = ACTION_TIMES.building_county;
       setGrid(prev => prev.map(c => {
         if (c.id === cellId) {
-          return { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: COSTS.county.farmers };
+          return { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers };
         } else if (targetCells.includes(c.id)) {
           return { ...c, type: 'grass', pendingAction: null, busyUntil: null, busyTotalDuration: null, farmersUsed: undefined };
         }
         return c;
       }));
+      setActionsUsedToday(prev => prev + costFarmers);
       setSelectedCell(null);
       return;
     }
 
     if (action === 'planting_tree') {
-      if (inventory.coins < COSTS.tree.coins || availableFarmers < COSTS.tree.farmers) return;
+      if (inventory.coins < COSTS.tree.coins) return;
       setInventory(prev => ({ ...prev, coins: prev.coins - COSTS.tree.coins }));
       const duration = ACTION_TIMES.planting_tree;
-      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: COSTS.tree.farmers } : c));
+      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers } : c));
+      setActionsUsedToday(prev => prev + costFarmers);
       setSelectedCell(null);
       return;
     }
 
     if (action === 'planting_forest') {
-      if (inventory.coins < COSTS.forest.coins || inventory.stone < COSTS.forest.stone || availableFarmers < COSTS.forest.farmers) return;
+      if (inventory.coins < COSTS.forest.coins || inventory.stone < COSTS.forest.stone) return;
       setInventory(prev => ({ ...prev, coins: prev.coins - COSTS.forest.coins, stone: prev.stone - COSTS.forest.stone }));
       const duration = ACTION_TIMES.planting_forest;
-      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: COSTS.forest.farmers } : c));
+      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers } : c));
+      setActionsUsedToday(prev => prev + costFarmers);
       setSelectedCell(null);
       return;
     }
 
     if (action === 'spawn_rock') {
-      if (inventory.coins < COSTS.rock.coins || availableFarmers < COSTS.rock.farmers) return;
+      if (inventory.coins < COSTS.rock.coins) return;
       setInventory(prev => ({ ...prev, coins: prev.coins - COSTS.rock.coins }));
       const duration = ACTION_TIMES.spawn_rock;
-      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: COSTS.rock.farmers } : c));
+      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers } : c));
+      setActionsUsedToday(prev => prev + costFarmers);
       setSelectedCell(null);
       return;
     }
@@ -1286,8 +1348,9 @@ const App: React.FC = () => {
       const duration = ACTION_TIMES.planting;
 
       setGrid(prev => prev.map(c => c.id === cellId ? {
-        ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, cropType: cropId, farmersUsed: 1
+        ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, cropType: cropId, farmersUsed: costFarmers
       } : c));
+      setActionsUsedToday(prev => prev + costFarmers);
       setSelectedCell(null);
       return;
     }
@@ -1295,8 +1358,9 @@ const App: React.FC = () => {
     if (['plowing', 'chopping', 'mining', 'harvesting'].includes(action as string)) {
       const duration = ACTION_TIMES[action as keyof typeof ACTION_TIMES];
       setGrid(prev => prev.map(c => c.id === cellId ? {
-        ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: 1
+        ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers
       } : c));
+      setActionsUsedToday(prev => prev + costFarmers);
     }
 
     setSelectedCell(null);
@@ -1500,22 +1564,25 @@ const App: React.FC = () => {
       body { margin: 0; font-family: 'Inter', system-ui, sans-serif; background-color: #86efac; color: #1e293b; user-select: none; -webkit-tap-highlight-color: transparent; }
       .game-container { max-width: 600px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; background: #bbf7d0; box-shadow: 0 0 50px rgba(0,0,0,0.1); position: relative; padding-bottom: 80px; }
       
-      .hud-wrapper { background: #0f172a; color: #f8fafc; border-bottom: 4px solid #1e293b; padding: 12px 20px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3); position: sticky; top: 0; z-index: 10; border-radius: 0 0 24px 24px; margin-bottom: 10px; }
-      .hud-main-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-      .stat-card { background: #1e293b; border: 2px solid #334155; border-radius: 16px; padding: 10px 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-weight: 800; font-size: 14px; transition: all 0.2s ease; }
+      .hud-wrapper { background: #0f172a; color: #f8fafc; border-bottom: 4px solid #1e293b; padding: 12px 20px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3); position: sticky; top: 0; z-index: 10; border-radius: 0 0 24px 24px; margin-bottom: 10px; transition: background 2s; }
+      .hud-wrapper.night { background: #090e17; border-bottom-color: #0f172a; }
+      
+      .hud-main-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+      .stat-card { background: #1e293b; border: 2px solid #334155; border-radius: 12px; padding: 8px 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-weight: 800; font-size: 13px; transition: all 0.2s ease; }
       .stat-card.highlight { border-color: #3b82f6; box-shadow: 0 0 15px rgba(59, 130, 246, 0.2); }
       .stat-card.gold { border-color: #fbbf24; color: #fbbf24; }
-      .stat-card-label { font-size: 10px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; text-align: center; }
-      .stat-card-value { display: flex; align-items: center; justify-content: center; gap: 6px; }
+      .stat-card-label { font-size: 9px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; text-align: center; }
+      .stat-card-value { display: flex; align-items: center; justify-content: center; gap: 4px; }
 
-      .floating-btn-container { position: fixed; bottom: 20px; left: 0; right: 0; display: flex; justify-content: center; gap: 10px; padding: 0 15px; z-index: 20; pointer-events: none; max-width: 600px; margin: 0 auto; flex-wrap: wrap; }
-      .floating-btn { pointer-events: auto; padding: 12px 18px; border-radius: 30px; font-weight: 800; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 6px; border: 3px solid white; cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.3); transition: transform 0.1s; flex: 1; max-width: 140px; white-space: nowrap; }
+      .floating-btn-container { position: fixed; bottom: 20px; left: 0; right: 0; display: flex; justify-content: center; gap: 8px; padding: 0 15px; z-index: 20; pointer-events: none; max-width: 600px; margin: 0 auto; flex-wrap: wrap; }
+      .floating-btn { pointer-events: auto; padding: 12px 14px; border-radius: 30px; font-weight: 800; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 6px; border: 3px solid white; cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.3); transition: transform 0.1s; flex: 1; max-width: 140px; white-space: nowrap; }
       .floating-btn:active { transform: scale(0.95); }
       .floating-btn:disabled { opacity: 0.5; cursor: not-allowed; }
       .btn-inventory { background: #3b82f6; color: white; }
       .btn-diary { background: #a855f7; color: white; }
       .btn-market { background: #fbbf24; color: #713f12; }
       .btn-settings { background: #475569; color: white; }
+      .btn-sleep { background: #1e3a8a; color: white; border-color: #3b82f6; }
       
       .badge-notification { position: absolute; top: -6px; right: -6px; background: #ef4444; color: white; font-size: 11px; font-weight: 900; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.2); animation: bounce-strong 1s infinite; }
       @keyframes bounce-strong { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px) scale(1.1); } }
@@ -1544,7 +1611,11 @@ const App: React.FC = () => {
       .inventory-val { font-size: 20px; font-weight: 900; color: #0f172a; margin-top: 4px; }
       .inventory-name { font-size: 10px; color: #64748b; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; }
 
-      .grid-wrapper { padding: 5px 15px 15px; flex-grow: 1; display: flex; align-items: flex-start; justify-content: center; }
+      .grid-wrapper { padding: 5px 15px 15px; flex-grow: 1; display: flex; align-items: flex-start; justify-content: center; position: relative; }
+      .night-overlay { position: absolute; inset: 0; background: rgba(15, 23, 42, 0.65); z-index: 40; pointer-events: none; opacity: 0; transition: opacity 1.5s ease-in-out; display: flex; align-items: center; justify-content: center; border-radius: 12px; margin: 5px 15px 15px; }
+      .night-overlay.active { opacity: 1; pointer-events: auto; }
+      .night-text { color: #cbd5e1; font-size: 2rem; font-weight: 900; text-shadow: 0 4px 10px rgba(0,0,0,0.5); display: flex; flex-direction: column; align-items: center; gap: 10px; }
+
       .farming-grid { display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr); gap: 3px; background: #15803d; padding: 4px; border-radius: 12px; width: 100%; aspect-ratio: 1 / 1; border: 4px solid #14532d; box-shadow: 0 10px 20px rgba(0,0,0,0.2); }
       .cell { background: #4ade80; border-radius: 4px; position: relative; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: filter 0.2s; overflow: hidden; }
       .cell:active { filter: brightness(0.9); }
@@ -1656,8 +1727,8 @@ const App: React.FC = () => {
                     </button>
                   </div>
                   <div className="modal-body" style={{fontSize: '14px', lineHeight: '1.6'}}>
-                    <h4 style={{color: '#3b82f6', marginTop: 0}}>👥 Cittadini e Popolazione</h4>
-                    <p>I cittadini sono la tua forza lavoro. Ogni azione sulla mappa richiede cittadini disponibili. Costruisci Case e uniscile in Villaggi, Città e Contee per aumentare la tua popolazione massima.</p>
+                    <h4 style={{color: '#3b82f6', marginTop: 0}}>👥 Cittadini e Azioni (Giorno e Notte)</h4>
+                    <p>Ogni tuo cittadino rappresenta <strong>1 Azione</strong> al giorno. Costruire un edificio o lavorare la terra consuma le azioni. Se esaurisci tutte le azioni disponibili scenderà automaticamente la notte, costringendo i cittadini a riposare prima del giorno successivo.</p>
 
                     <h4 style={{color: '#10b981'}}>🏗️ Progressione e Sblocchi</h4>
                     <p>Raccogli materiali di base (Legna e Pietra) per sbloccare nuove strutture. Quando raggiungi i requisiti di risorse e popolazione per la prima volta, l'edificio si sbloccherà permanentemente.</p>
@@ -1716,16 +1787,16 @@ const App: React.FC = () => {
           ))}
         </div>
 
-        <div className="hud-wrapper">
+        <div className={`hud-wrapper ${isNight ? 'night' : ''}`}>
           <div className="hud-main-stats">
             <div className="stat-card gold">
               <span className="stat-card-label">Finanze</span>
               <div className="stat-card-value"><Coins size={16} /> {inventory.coins}</div>
             </div>
-            <div className={`stat-card ${availableFarmers > 0 ? 'highlight' : ''}`}>
+            <div className="stat-card">
               <span className="stat-card-label">Popolazione</span>
               <div className="stat-card-value">
-                <Users size={16} color="#60a5fa" /> {availableFarmers} / {totalFarmers}
+                <Users size={16} color="#60a5fa" /> {totalFarmers}
                 {respawningFarmers.length > 0 && (
                     <span style={{marginLeft: '4px', color: '#fca5a5', display: 'flex', alignItems: 'center', gap: '2px'}} title="Cittadini in recupero">
                                     <Skull size={12} /> {respawningFarmers.length}
@@ -1733,32 +1804,53 @@ const App: React.FC = () => {
                 )}
               </div>
             </div>
-            <div className={`stat-card ${availableShips > 0 ? 'highlight' : ''}`}>
-              <span className="stat-card-label">Flotta</span>
-              <div className="stat-card-value"><Ship size={16} color="#38bdf8" /> {availableShips} / {totalPorts}</div>
+            <div className={`stat-card ${actionsLeft > 0 && !isNight ? 'highlight' : ''}`}>
+              <span className="stat-card-label">Azioni Oggi</span>
+              <div className="stat-card-value">
+                <Zap size={16} color={isNight ? '#64748b' : '#fbbf24'} />
+                <span style={{color: isNight ? '#64748b' : 'inherit'}}>{actionsLeft} / {totalFarmers}</span>
+              </div>
+            </div>
+            <div className="stat-card">
+              <span className="stat-card-label">Giorno</span>
+              <div className="stat-card-value">
+                {isNight ? <Moon size={16} color="#94a3b8" /> : <Sun size={16} color="#fde047" />}
+                {dayCount}
+              </div>
             </div>
           </div>
         </div>
 
         <div className="floating-btn-container">
           <button className="floating-btn btn-diary" style={{position: 'relative'}} onClick={() => { setShowDiaryModal(true); setUnreadQuests(0); }}>
-            <BookMarked size={20} /> Diario
+            <BookMarked size={16} /> Diario
             {unreadQuests > 0 && (
                 <span className="badge-notification">{unreadQuests}</span>
             )}
           </button>
           <button className="floating-btn btn-inventory" onClick={() => setShowInventoryModal(true)}>
-            <Package size={20} /> Zaino
+            <Package size={16} /> Zaino
           </button>
           <button className="floating-btn btn-market" onClick={() => setShowMarketModal(true)}>
-            <Store size={20} /> Mercato
+            <Store size={16} /> Mercato
           </button>
           <button className="floating-btn btn-settings" onClick={() => setShowSettingsModal(true)}>
-            <Settings size={20} /> Menu
+            <Settings size={16} /> Opzioni
           </button>
+          {actionsLeft > 0 && !isNight && (
+              <button className="floating-btn btn-sleep" onClick={endDay}>
+                <Moon size={16} /> Dormi
+              </button>
+          )}
         </div>
 
         <div className="grid-wrapper">
+          <div className={`night-overlay ${isNight ? 'active' : ''}`}>
+            <div className="night-text">
+              <Moon size={48} color="#cbd5e1" />
+              Notte in corso...
+            </div>
+          </div>
           <div className="farming-grid">
             {grid.map(cell => {
               const isReachableCell = reachableCells.has(cell.id);
@@ -1766,7 +1858,7 @@ const App: React.FC = () => {
                   <div
                       key={cell.id}
                       className={`cell ${!isReachableCell ? 'fog' : cell.type} ${cell.busyUntil || cell.pendingAction ? 'busy' : ''}`}
-                      onClick={() => { if (!cell.busyUntil && !cell.pendingAction) setSelectedCell(cell.id); }}
+                      onClick={() => { if (!cell.busyUntil && !cell.pendingAction && !isNight) setSelectedCell(cell.id); }}
                   >
                     {!isReachableCell ? <CloudFog size={28} color="#f8fafc" opacity={0.8} /> : renderCellContent(cell)}
                   </div>
@@ -1950,9 +2042,9 @@ const App: React.FC = () => {
                       </div>
                   ) : (
                       <>
-                        {availableFarmers <= 0 && !['growing', 'mine', 'forest', 'animal_farm', 'water'].includes(activeCell.type) && (
+                        {actionsLeft <= 0 && !['growing', 'mine', 'forest', 'animal_farm', 'water'].includes(activeCell.type) && (
                             <div style={{ padding: '10px', background: '#fef2f2', color: '#ef4444', textAlign: 'center', borderRadius: '12px', marginBottom: '15px', fontWeight: 'bold' }}>
-                              Nessun cittadino disponibile!
+                              Azioni esaurite per oggi!
                             </div>
                         )}
 
@@ -1966,10 +2058,10 @@ const App: React.FC = () => {
                                 {activeCell.wildAnimalCount === 1 ? "Cerca un compagno per riprodursi..." :
                                     activeCell.wildAnimalCount! >= 2 && activeCell.wildAnimalCount! < 10 ? "Si stanno riproducendo passivamente (50s)..." : "Capacità massima del branco raggiunta!"}
                               </div>
-                              <button className="action-btn" style={{background: '#c2410c', color: 'white'}} disabled={availableFarmers < 2} onClick={() => startAction(activeCell.id, 'hunting')}>
+                              <button className="action-btn" style={{background: '#c2410c', color: 'white'}} disabled={actionsLeft < 2} onClick={() => startAction(activeCell.id, 'hunting')}>
                                 <Crosshair size={20} /> Caccia ({(ACTION_TIMES.hunting/1000)}s)
-                                <span className="action-badge" style={{background: availableFarmers >= 2 ? 'rgba(255,255,255,0.2)' : '#ef4444', padding: '4px 6px'}}>
-                          2<Users size={10} style={{display:'inline', verticalAlign:'middle'}}/> | 20% 🎯 | 15% <Skull size={10} style={{display:'inline', verticalAlign:'middle'}}/>
+                                <span className="action-badge" style={{background: actionsLeft >= 2 ? 'rgba(255,255,255,0.2)' : '#ef4444', padding: '4px 6px'}}>
+                          2<Zap size={10} style={{display:'inline', verticalAlign:'middle'}}/> | 20% 🎯 | 15% <Skull size={10} style={{display:'inline', verticalAlign:'middle'}}/>
                         </span>
                               </button>
                             </div>
@@ -1997,75 +2089,75 @@ const App: React.FC = () => {
 
                         {activeCell.type === 'grass' && (
                             <>
-                              <button className="action-btn btn-plow" disabled={availableFarmers < 1} onClick={() => startAction(activeCell.id, 'plowing')}>
+                              <button className="action-btn btn-plow" disabled={actionsLeft < 1} onClick={() => startAction(activeCell.id, 'plowing')}>
                                 <Tractor size={20} /> Ara Terreno ({(ACTION_TIMES.plowing/1000)}s)
                               </button>
 
                               {isAdjacentToWater && unlocked.port && (
                                   <>
-                                    <button className="action-btn btn-port" disabled={availableFarmers < COSTS.port.farmers || !canBuildPort} onClick={() => startAction(activeCell.id, 'building_port')}>
+                                    <button className="action-btn btn-port" disabled={actionsLeft < COSTS.port.farmers || !canBuildPort} onClick={() => startAction(activeCell.id, 'building_port')}>
                                       <Anchor size={20} /> Costruisci Porto ({(ACTION_TIMES.building_port/1000)}s)
-                                      <span className="action-badge" style={{background: canBuildPort ? 'rgba(255,255,255,0.2)' : '#ef4444'}}>
-                            20<TreePine size={10} /> 10<Mountain size={10} /> 200<Coins size={10} /> {COSTS.port.farmers}<Users size={10} />
+                                      <span className="action-badge" style={{background: canBuildPort && actionsLeft >= COSTS.port.farmers ? 'rgba(255,255,255,0.2)' : '#ef4444'}}>
+                            20<TreePine size={10} /> 10<Mountain size={10} /> 200<Coins size={10} /> {COSTS.port.farmers}<Zap size={10} />
                           </span>
                                     </button>
-                                    <p style={{fontSize:'10px', color:'#ef4444', textAlign:'center', marginTop:'-5px', marginBottom:'10px'}}>Attenzione: Il porto sacrificherà permanentemente {COSTS.port.farmers} cittadini per l'equipaggio! (Devi avere cittadini in eccesso)</p>
+                                    <p style={{fontSize:'10px', color:'#ef4444', textAlign:'center', marginTop:'-5px', marginBottom:'10px'}}>Attenzione: Il porto sacrificherà permanentemente {COSTS.port.farmers} cittadini per l'equipaggio!</p>
                                   </>
                               )}
 
                               {unlocked.house && (
-                                  <button className="action-btn btn-build" disabled={availableFarmers < COSTS.house.farmers || !canBuildHouse} onClick={() => startAction(activeCell.id, 'building_house')}>
+                                  <button className="action-btn btn-build" disabled={actionsLeft < COSTS.house.farmers || !canBuildHouse} onClick={() => startAction(activeCell.id, 'building_house')}>
                                     <Home size={20} /> Costruisci Casa ({(ACTION_TIMES.building_house/1000)}s)
-                                    <span className="action-badge" style={{background: canBuildHouse ? 'rgba(255,255,255,0.2)' : '#ef4444'}}>
-                            3<TreePine size={10} /> 6<Mountain size={10} /> {COSTS.house.farmers}<Users size={10} />
+                                    <span className="action-badge" style={{background: canBuildHouse && actionsLeft >= COSTS.house.farmers ? 'rgba(255,255,255,0.2)' : '#ef4444'}}>
+                            3<TreePine size={10} /> 6<Mountain size={10} /> {COSTS.house.farmers}<Zap size={10} />
                           </span>
                                   </button>
                               )}
                               {unlocked.animal_farm && (
-                                  <button className="action-btn btn-build" disabled={availableFarmers < COSTS.animal_farm.farmers || !canBuildAnimalFarm} onClick={() => startAction(activeCell.id, 'building_animal_farm')}>
+                                  <button className="action-btn btn-build" disabled={actionsLeft < COSTS.animal_farm.farmers || !canBuildAnimalFarm} onClick={() => startAction(activeCell.id, 'building_animal_farm')}>
                                     <Warehouse size={20} /> Fattoria Animali ({(ACTION_TIMES.building_animal_farm/1000)}s)
-                                    <span className="action-badge" style={{background: canBuildAnimalFarm ? 'rgba(255,255,255,0.2)' : '#ef4444'}}>
-                            5<Wheat size={10} /> 5<TreePine size={10} /> 5<Mountain size={10} /> 100<Coins size={10} /> {COSTS.animal_farm.farmers}<Users size={10} />
+                                    <span className="action-badge" style={{background: canBuildAnimalFarm && actionsLeft >= COSTS.animal_farm.farmers ? 'rgba(255,255,255,0.2)' : '#ef4444'}}>
+                            5<Wheat size={10} /> 5<TreePine size={10} /> 5<Mountain size={10} /> 100<Coins size={10} /> {COSTS.animal_farm.farmers}<Zap size={10} />
                           </span>
                                   </button>
                               )}
                               {unlocked.lumber_mill && (
-                                  <button className="action-btn btn-build" disabled={availableFarmers < COSTS.lumber_mill.farmers || !canBuildLumberMill} onClick={() => startAction(activeCell.id, 'building_lumber_mill')}>
+                                  <button className="action-btn btn-build" disabled={actionsLeft < COSTS.lumber_mill.farmers || !canBuildLumberMill} onClick={() => startAction(activeCell.id, 'building_lumber_mill')}>
                                     <Factory size={20} /> Segheria ({(ACTION_TIMES.building_lumber_mill/1000)}s)
-                                    <span className="action-badge" style={{background: canBuildLumberMill ? 'rgba(255,255,255,0.2)' : '#ef4444'}}>
-                            15<TreePine size={10} /> 5<Mountain size={10} /> 150<Coins size={10} /> {COSTS.lumber_mill.farmers}<Users size={10} />
+                                    <span className="action-badge" style={{background: canBuildLumberMill && actionsLeft >= COSTS.lumber_mill.farmers ? 'rgba(255,255,255,0.2)' : '#ef4444'}}>
+                            15<TreePine size={10} /> 5<Mountain size={10} /> 150<Coins size={10} /> {COSTS.lumber_mill.farmers}<Zap size={10} />
                           </span>
                                   </button>
                               )}
                               {unlocked.stone_mason && (
-                                  <button className="action-btn btn-build" disabled={availableFarmers < COSTS.stone_mason.farmers || !canBuildStoneMason} onClick={() => startAction(activeCell.id, 'building_stone_mason')}>
+                                  <button className="action-btn btn-build" disabled={actionsLeft < COSTS.stone_mason.farmers || !canBuildStoneMason} onClick={() => startAction(activeCell.id, 'building_stone_mason')}>
                                     <Factory size={20} /> Tagliapietre ({(ACTION_TIMES.building_stone_mason/1000)}s)
-                                    <span className="action-badge" style={{background: canBuildStoneMason ? 'rgba(255,255,255,0.2)' : '#ef4444'}}>
-                            10<TreePine size={10} /> 15<Mountain size={10} /> 150<Coins size={10} /> {COSTS.stone_mason.farmers}<Users size={10} />
+                                    <span className="action-badge" style={{background: canBuildStoneMason && actionsLeft >= COSTS.stone_mason.farmers ? 'rgba(255,255,255,0.2)' : '#ef4444'}}>
+                            10<TreePine size={10} /> 15<Mountain size={10} /> 150<Coins size={10} /> {COSTS.stone_mason.farmers}<Zap size={10} />
                           </span>
                                   </button>
                               )}
                               {unlocked.tree && (
-                                  <button className="action-btn btn-plant-forest" disabled={availableFarmers < COSTS.tree.farmers || !canPlantTree} onClick={() => startAction(activeCell.id, 'planting_tree')}>
+                                  <button className="action-btn btn-plant-forest" disabled={actionsLeft < COSTS.tree.farmers || !canPlantTree} onClick={() => startAction(activeCell.id, 'planting_tree')}>
                                     <TreePine size={20} /> Pianta Albero ({(ACTION_TIMES.planting_tree/1000)}s)
-                                    <span className="action-badge" style={{background: canPlantTree ? 'rgba(255,255,255,0.2)' : '#ef4444'}}>
-                            {COSTS.tree.coins}<Coins size={10} /> {COSTS.tree.farmers}<Users size={10} />
+                                    <span className="action-badge" style={{background: canPlantTree && actionsLeft >= COSTS.tree.farmers ? 'rgba(255,255,255,0.2)' : '#ef4444'}}>
+                            {COSTS.tree.coins}<Coins size={10} /> {COSTS.tree.farmers}<Zap size={10} />
                           </span>
                                   </button>
                               )}
                               {unlocked.forest && (
-                                  <button className="action-btn btn-plant-forest" disabled={availableFarmers < COSTS.forest.farmers || !canPlantForest} onClick={() => startAction(activeCell.id, 'planting_forest')}>
+                                  <button className="action-btn btn-plant-forest" disabled={actionsLeft < COSTS.forest.farmers || !canPlantForest} onClick={() => startAction(activeCell.id, 'planting_forest')}>
                                     <div style={{display:'flex', marginRight:'4px'}}><TreePine size={20} /><TreePine size={20} style={{marginLeft: '-10px'}}/></div> Pianta Bosco ({(ACTION_TIMES.planting_forest/1000)}s)
-                                    <span className="action-badge" style={{background: canPlantForest ? 'rgba(255,255,255,0.2)' : '#ef4444'}}>
-                            {COSTS.forest.stone}<Mountain size={10} /> {COSTS.forest.coins}<Coins size={10} /> {COSTS.forest.farmers}<Users size={10} />
+                                    <span className="action-badge" style={{background: canPlantForest && actionsLeft >= COSTS.forest.farmers ? 'rgba(255,255,255,0.2)' : '#ef4444'}}>
+                            {COSTS.forest.stone}<Mountain size={10} /> {COSTS.forest.coins}<Coins size={10} /> {COSTS.forest.farmers}<Zap size={10} />
                           </span>
                                   </button>
                               )}
                               {unlocked.rock && (
-                                  <button className="action-btn" style={{background: '#475569', color: 'white'}} disabled={availableFarmers < COSTS.rock.farmers || !canSpawnRock} onClick={() => startAction(activeCell.id, 'spawn_rock')}>
+                                  <button className="action-btn" style={{background: '#475569', color: 'white'}} disabled={actionsLeft < COSTS.rock.farmers || !canSpawnRock} onClick={() => startAction(activeCell.id, 'spawn_rock')}>
                                     <Mountain size={20} /> Cerca Filone ({(ACTION_TIMES.spawn_rock/1000)}s)
-                                    <span className="action-badge" style={{background: canSpawnRock ? 'rgba(255,255,255,0.2)' : '#ef4444'}}>
-                            50<Coins size={10} /> {COSTS.rock.farmers}<Users size={10} />
+                                    <span className="action-badge" style={{background: canSpawnRock && actionsLeft >= COSTS.rock.farmers ? 'rgba(255,255,255,0.2)' : '#ef4444'}}>
+                            50<Coins size={10} /> {COSTS.rock.farmers}<Zap size={10} />
                           </span>
                                   </button>
                               )}
@@ -2081,7 +2173,7 @@ const App: React.FC = () => {
                                 return (
                                     <button
                                         key={crop.id} className="action-btn" style={{ background: crop.color, color: 'white' }}
-                                        disabled={seedCount < 1 || availableFarmers < 1}
+                                        disabled={seedCount < 1 || actionsLeft < 1}
                                         onClick={() => startAction(activeCell.id, `planting_${crop.id}`)}
                                     >
                                       {React.createElement(crop.icon, { size: 20 })} Pianta {crop.name} <span style={{fontSize:'12px', opacity:0.8}}>- Cresce in {crop.growthTime/1000}s</span>
@@ -2093,29 +2185,29 @@ const App: React.FC = () => {
                         )}
 
                         {activeCell.type === 'ready' && activeCell.cropType && (
-                            <button className="action-btn btn-harvest" disabled={availableFarmers < 1} onClick={() => startAction(activeCell.id, 'harvesting')}>
+                            <button className="action-btn btn-harvest" disabled={actionsLeft < 1} onClick={() => startAction(activeCell.id, 'harvesting')}>
                               {React.createElement(CROPS[activeCell.cropType].icon, { size: 20 })}
                               Raccogli {CROPS[activeCell.cropType].name} ({(ACTION_TIMES.harvesting/1000)}s)
                             </button>
                         )}
 
                         {activeCell.type === 'tree' && (
-                            <button className="action-btn btn-chop" disabled={availableFarmers < 1} onClick={() => startAction(activeCell.id, 'chopping')}>
+                            <button className="action-btn btn-chop" disabled={actionsLeft < 1} onClick={() => startAction(activeCell.id, 'chopping')}>
                               <Axe size={20} /> Taglia Albero ({(ACTION_TIMES.chopping/1000)}s)
                             </button>
                         )}
 
                         {activeCell.type === 'rock' && (
                             <>
-                              <button className="action-btn btn-chop" disabled={availableFarmers < 1} onClick={() => startAction(activeCell.id, 'mining')}>
+                              <button className="action-btn btn-chop" disabled={actionsLeft < 1} onClick={() => startAction(activeCell.id, 'mining')}>
                                 <Pickaxe size={20} /> Spacca Roccia ({(ACTION_TIMES.mining/1000)}s)
                               </button>
                               <p style={{fontSize: '11px', color: '#64748b', marginTop: '-5px', marginBottom: '10px', textAlign: 'center'}}>Può droppare: Pietra, Ferro, Rame o Oro.</p>
                               {unlocked.mine && (
-                                  <button className="action-btn btn-build" disabled={availableFarmers < COSTS.mine.farmers || !canBuildMine} onClick={() => startAction(activeCell.id, 'building_mine')}>
+                                  <button className="action-btn btn-build" disabled={actionsLeft < COSTS.mine.farmers || !canBuildMine} onClick={() => startAction(activeCell.id, 'building_mine')}>
                                     <Hammer size={20} /> Costruisci Miniera ({(ACTION_TIMES.building_mine/1000)}s)
-                                    <span className="action-badge" style={{background: canBuildMine && availableFarmers >= COSTS.mine.farmers ? 'rgba(255,255,255,0.2)' : '#ef4444'}}>
-                              10<TreePine size={10} /> 100<Coins size={10} /> {COSTS.mine.farmers}<Users size={10} />
+                                    <span className="action-badge" style={{background: canBuildMine && actionsLeft >= COSTS.mine.farmers ? 'rgba(255,255,255,0.2)' : '#ef4444'}}>
+                              10<TreePine size={10} /> 100<Coins size={10} /> {COSTS.mine.farmers}<Zap size={10} />
                             </span>
                                   </button>
                               )}
@@ -2125,9 +2217,9 @@ const App: React.FC = () => {
                         {activeCell.type === 'lumber_mill' && (
                             <div style={{ textAlign: 'center', padding: '10px' }}>
                               <Factory size={40} color="#78350f" fill="#92400e" style={{ margin: '0 auto 10px' }} />
-                              <button className="action-btn" style={{background: '#d97706', color: 'white'}} disabled={availableFarmers < 1 || inventory.wood < 2} onClick={() => startAction(activeCell.id, 'crafting_planks')}>
+                              <button className="action-btn" style={{background: '#d97706', color: 'white'}} disabled={actionsLeft < 1 || inventory.wood < 2} onClick={() => startAction(activeCell.id, 'crafting_planks')}>
                                 <Box size={20} /> Crea Asse di Legno ({(ACTION_TIMES.crafting/1000)}s)
-                                <span className="action-badge" style={{background: inventory.wood >= 2 ? 'rgba(255,255,255,0.2)' : '#ef4444'}}>2<TreePine size={10} /></span>
+                                <span className="action-badge" style={{background: inventory.wood >= 2 && actionsLeft >= 1 ? 'rgba(255,255,255,0.2)' : '#ef4444'}}>2<TreePine size={10} /></span>
                               </button>
                             </div>
                         )}
@@ -2135,9 +2227,9 @@ const App: React.FC = () => {
                         {activeCell.type === 'stone_mason' && (
                             <div style={{ textAlign: 'center', padding: '10px' }}>
                               <Factory size={40} color="#334155" fill="#475569" style={{ margin: '0 auto 10px' }} />
-                              <button className="action-btn" style={{background: '#cbd5e1', color: '#334155'}} disabled={availableFarmers < 1 || inventory.stone < 2} onClick={() => startAction(activeCell.id, 'crafting_bricks')}>
+                              <button className="action-btn" style={{background: '#cbd5e1', color: '#334155'}} disabled={actionsLeft < 1 || inventory.stone < 2} onClick={() => startAction(activeCell.id, 'crafting_bricks')}>
                                 <Layers size={20} /> Crea Mattone ({(ACTION_TIMES.crafting/1000)}s)
-                                <span className="action-badge" style={{background: inventory.stone >= 2 ? 'rgba(0,0,0,0.1)' : '#ef4444', color: inventory.stone >= 2 ? '#334155' : 'white'}}>2<Mountain size={10} /></span>
+                                <span className="action-badge" style={{background: inventory.stone >= 2 && actionsLeft >= 1 ? 'rgba(0,0,0,0.1)' : '#ef4444', color: inventory.stone >= 2 && actionsLeft >= 1 ? '#334155' : 'white'}}>2<Mountain size={10} /></span>
                               </button>
                             </div>
                         )}
@@ -2149,10 +2241,10 @@ const App: React.FC = () => {
 
                               {getMergeableCells(activeCell.id, 'house') && unlocked.village && (
                                   <div style={{marginTop: '20px'}}>
-                                    <button className="action-btn btn-build" disabled={availableFarmers < COSTS.village.farmers || inventory.coins < COSTS.village.coins} onClick={() => startAction(activeCell.id, 'building_village')}>
+                                    <button className="action-btn btn-build" disabled={actionsLeft < COSTS.village.farmers || inventory.coins < COSTS.village.coins} onClick={() => startAction(activeCell.id, 'building_village')}>
                                       <Tent size={20} /> Crea Villaggio ({(ACTION_TIMES.building_village/1000)}s)
-                                      <span className="action-badge" style={{background: availableFarmers >= COSTS.village.farmers && inventory.coins >= COSTS.village.coins ? 'rgba(255,255,255,0.2)' : '#ef4444'}}>
-                              {COSTS.village.coins}<Coins size={10} /> {COSTS.village.farmers}<Users size={10} />
+                                      <span className="action-badge" style={{background: actionsLeft >= COSTS.village.farmers && inventory.coins >= COSTS.village.coins ? 'rgba(255,255,255,0.2)' : '#ef4444'}}>
+                              {COSTS.village.coins}<Coins size={10} /> {COSTS.village.farmers}<Zap size={10} />
                             </span>
                                     </button>
                                     <p style={{fontSize: '11px', color: '#64748b', marginTop: '8px', lineHeight: '1.4'}}>
@@ -2170,10 +2262,10 @@ const App: React.FC = () => {
 
                               {getMergeableCells(activeCell.id, 'village') && unlocked.city && (
                                   <div style={{marginTop: '20px'}}>
-                                    <button className="action-btn btn-build" disabled={availableFarmers < COSTS.city.farmers || inventory.coins < COSTS.city.coins} onClick={() => startAction(activeCell.id, 'building_city')}>
+                                    <button className="action-btn btn-build" disabled={actionsLeft < COSTS.city.farmers || inventory.coins < COSTS.city.coins} onClick={() => startAction(activeCell.id, 'building_city')}>
                                       <Castle size={20} /> Crea Città ({(ACTION_TIMES.building_city/1000)}s)
-                                      <span className="action-badge" style={{background: availableFarmers >= COSTS.city.farmers && inventory.coins >= COSTS.city.coins ? 'rgba(255,255,255,0.2)' : '#ef4444'}}>
-                              {COSTS.city.coins}<Coins size={10} /> {COSTS.city.farmers}<Users size={10} />
+                                      <span className="action-badge" style={{background: actionsLeft >= COSTS.city.farmers && inventory.coins >= COSTS.city.coins ? 'rgba(255,255,255,0.2)' : '#ef4444'}}>
+                              {COSTS.city.coins}<Coins size={10} /> {COSTS.city.farmers}<Zap size={10} />
                             </span>
                                     </button>
                                     <p style={{fontSize: '11px', color: '#64748b', marginTop: '8px', lineHeight: '1.4'}}>
@@ -2191,10 +2283,10 @@ const App: React.FC = () => {
 
                               {getMergeableCells(activeCell.id, 'city') && unlocked.county && (
                                   <div style={{marginTop: '20px'}}>
-                                    <button className="action-btn btn-build" disabled={availableFarmers < COSTS.county.farmers || inventory.coins < COSTS.county.coins} onClick={() => startAction(activeCell.id, 'building_county')}>
+                                    <button className="action-btn btn-build" disabled={actionsLeft < COSTS.county.farmers || inventory.coins < COSTS.county.coins} onClick={() => startAction(activeCell.id, 'building_county')}>
                                       <Landmark size={20} /> Crea Contea ({(ACTION_TIMES.building_county/1000)}s)
-                                      <span className="action-badge" style={{background: availableFarmers >= COSTS.county.farmers && inventory.coins >= COSTS.county.coins ? 'rgba(255,255,255,0.2)' : '#ef4444'}}>
-                              {COSTS.county.coins}<Coins size={10} /> {COSTS.county.farmers}<Users size={10} />
+                                      <span className="action-badge" style={{background: actionsLeft >= COSTS.county.farmers && inventory.coins >= COSTS.county.coins ? 'rgba(255,255,255,0.2)' : '#ef4444'}}>
+                              {COSTS.county.coins}<Coins size={10} /> {COSTS.county.farmers}<Zap size={10} />
                             </span>
                                     </button>
                                     <p style={{fontSize: '11px', color: '#64748b', marginTop: '8px', lineHeight: '1.4'}}>
@@ -2241,7 +2333,7 @@ const App: React.FC = () => {
                         {activeCell.type === 'mine' && (
                             <div style={{ textAlign: 'center', padding: '20px', color: '#64748b' }}>
                               <Hammer size={40} color="#f59e0b" style={{ margin: '0 auto 10px' }} />
-                              Miniera in funzione passivamente.<br/>Genera minerali senza usare cittadini. ({activeCell.mineTicks || 0}/12)
+                              Miniera in funzione passivamente.<br/>Genera minerali senza usare azioni. ({activeCell.mineTicks || 0}/12)
                             </div>
                         )}
 
@@ -2258,7 +2350,7 @@ const App: React.FC = () => {
                         {activeCell.type === 'growing' && (
                             <div style={{ textAlign: 'center', padding: '20px', color: '#64748b' }}>
                               <Sprout size={40} color="#4ade80" style={{ margin: '0 auto 10px' }} />
-                              La pianta sta crescendo da sola.<br/>Nessun cittadino necessario!
+                              La pianta sta crescendo da sola.<br/>Nessuna azione necessaria!
                             </div>
                         )}
                       </>
@@ -2413,7 +2505,6 @@ const App: React.FC = () => {
                         </div>
                       </div>
                   ))}
-
                 </div>
               </div>
             </div>
