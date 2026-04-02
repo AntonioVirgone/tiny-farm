@@ -6,7 +6,7 @@ import {
   Droplets, Fish, Factory, Box, Layers, Rabbit, Crosshair, Bone, Gem,
   Ship, Anchor, Lock, Castle, Landmark, Skull, CloudFog, Package,
   BookMarked, CheckCircle, AlertTriangle, Play, Leaf, Save, Info, Download, Upload,
-  Settings, LogOut, Sun, Moon, CalendarDays, Zap
+  Settings, LogOut, Sun, Moon, CalendarDays, Zap, Sparkles
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
@@ -316,7 +316,7 @@ const App: React.FC = () => {
   const [hasSave, setHasSave] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // NUOVI STATI PER IL GIORNO/NOTTE E AZIONI
+  // STATI PER IL GIORNO/NOTTE E AZIONI
   const [dayCount, setDayCount] = useState<number>(1);
   const [isNight, setIsNight] = useState<boolean>(false);
   const [actionsUsedToday, setActionsUsedToday] = useState<number>(0);
@@ -329,6 +329,12 @@ const App: React.FC = () => {
   const [showInventoryModal, setShowInventoryModal] = useState(false);
   const [showDiaryModal, setShowDiaryModal] = useState(false);
   const [showTutorialModal, setShowTutorialModal] = useState(false);
+
+  // STATI PER L'INTEGRAZIONE GEMINI (L'ANZIANO DEL VILLAGGIO)
+  const [showElderModal, setShowElderModal] = useState(false);
+  const [elderMessage, setElderMessage] = useState("");
+  const [isElderThinking, setIsElderThinking] = useState(false);
+
   const [completedQuests, setCompletedQuests] = useState<string[]>([]);
   const [unreadQuests, setUnreadQuests] = useState(0);
   const [toasts, setToasts] = useState<{id: string, title: string, type?: 'success' | 'danger'}[]>([]);
@@ -402,6 +408,15 @@ const App: React.FC = () => {
 
   const totalFarmers = Math.max(0, baseFarmers - (totalPorts * COSTS.port.farmers) - respawningFarmers.length);
 
+  const busyFarmers = grid.reduce((sum, c) => {
+    if (c.pendingAction && c.pendingAction !== 'growing' && c.pendingAction !== 'active_mine' && c.pendingAction !== 'fishing' && c.pendingAction !== 'active_forest') {
+      return sum + (c.farmersUsed || 1);
+    }
+    return sum;
+  }, 0);
+
+  const availableFarmers = totalFarmers - busyFarmers;
+
   // AZIONI RIMANENTI OGGI
   const actionsLeft = Math.max(0, totalFarmers - actionsUsedToday);
   const totalAnimals = grid.reduce((sum, cell) => sum + (cell.animalCount || 0), 0);
@@ -414,6 +429,68 @@ const App: React.FC = () => {
       setGameState('gameover');
     }
   }, [totalFarmers, gameState]);
+
+  // --- INTEGRAZIONE LLM GEMINI: L'ANZIANO DEL VILLAGGIO ---
+  const askVillageElder = async () => {
+    setElderMessage("");
+    setIsElderThinking(true);
+    setShowElderModal(true);
+
+    const apiKey = ""; // La chiave API viene iniettata a runtime
+
+    const systemPrompt =
+        "Sei il saggio e antico Anziano del villaggio in un videogioco gestionale di agricoltura e costruzione città. " +
+        "Il giocatore è il capo del villaggio che ha bisogno di un consiglio su cosa fare dopo. " +
+        "Parla in prima persona, con un tono calmo, misterioso e molto immersivo (come in un gioco di ruolo). " +
+        "Analizza i dati che ti verranno forniti sull'inventario e sullo stato del villaggio e dai un singolo e breve consiglio strategico su quale dovrebbe essere il prossimo passo. " +
+        "Se il giocatore ha poche risorse di base (legna, pietra), suggerisci di raccoglierle. Se ha molte risorse, suggerisci di espandere costruendo case, villaggi, o esplorando il mare con un porto. " +
+        "Sii breve e conciso, massimo 2 o 3 frasi. Usa 1 o 2 emoji adatte per rendere il testo più carino.";
+
+    // Raccogli i dati correnti per fornire contesto all'LLM
+    const activeQuestIndex = ALL_QUESTS.findIndex(q => !completedQuests.includes(q.id));
+    const currentQuestStr = activeQuestIndex !== -1 ? ALL_QUESTS[activeQuestIndex].title : "Dominio totale";
+
+    const userQuery =
+        `Giorno corrente: ${dayCount}. Popolazione totale: ${totalFarmers}. ` +
+        `Inventario attuale: Monete:${inventory.coins}, Legna:${inventory.wood}, Pietra:${inventory.stone}, Grano:${inventory.wheat}. ` +
+        `Flotta navale disponibile: ${availableShips}/${totalPorts}. ` +
+        `Obiettivo attuale del diario: ${currentQuestStr}. ` +
+        `Dammi il tuo consiglio saggio.`;
+
+    const payload = {
+      contents: [{ parts: [{ text: userQuery }] }],
+      systemInstruction: { parts: [{ text: systemPrompt }] }
+    };
+
+    const fetchWithRetry = async (retries = 5, delay = 1000): Promise<string> => {
+      try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!response.ok) throw new Error('API Error');
+        const data = await response.json();
+        return data.candidates?.[0]?.content?.parts?.[0]?.text || "Mmm... I venti non portano notizie oggi.";
+      } catch (err) {
+        if (retries > 0) {
+          await new Promise(res => setTimeout(res, delay));
+          return fetchWithRetry(retries - 1, delay * 2);
+        }
+        throw err;
+      }
+    };
+
+    try {
+      const text = await fetchWithRetry();
+      setElderMessage(text);
+    } catch (error) {
+      setElderMessage("Hmm... le nebbie del fato sono troppo fitte oggi. Riprova più tardi, giovane capo.");
+    } finally {
+      setIsElderThinking(false);
+    }
+  };
+
 
   // --- SALVATAGGIO (Cloud + Locale Fallback) ---
   const handleSaveGame = async (isAuto = false) => {
@@ -567,8 +644,28 @@ const App: React.FC = () => {
       handleSaveGame(true);
     }, 60000);
     return () => clearInterval(autoSaveInterval);
-  }, [gameState]);
+  }, [gameState, user]);
 
+  // --- TRANSIZIONE GIORNO/NOTTE ---
+  const endDay = () => {
+    setIsNight(true);
+    setSelectedCell(null);
+    setTimeout(() => {
+      setIsNight(false);
+      setDayCount(d => d + 1);
+      setActionsUsedToday(0);
+    }, 5000); // La notte dura 5 secondi
+  };
+
+  // Auto-Notte quando finiscono le azioni
+  useEffect(() => {
+    if (actionsLeft <= 0 && !isNight && totalFarmers > 0 && gameState === 'playing') {
+      const t = setTimeout(() => {
+        endDay();
+      }, 1500); // Piccola pausa prima che cali la notte
+      return () => clearTimeout(t);
+    }
+  }, [actionsLeft, isNight, totalFarmers, gameState]);
 
   // Logica Eventi Casuali Bilanciati
   useEffect(() => {
@@ -622,26 +719,112 @@ const App: React.FC = () => {
     return () => clearInterval(eventInterval);
   }, [gameState]);
 
-  // --- TRANSIZIONE GIORNO/NOTTE ---
-  const endDay = () => {
-    setIsNight(true);
-    setSelectedCell(null);
-    setTimeout(() => {
-      setIsNight(false);
-      setDayCount(d => d + 1);
-      setActionsUsedToday(0);
-    }, 5000); // La notte dura 5 secondi
-  };
-
-  // Auto-Notte quando finiscono le azioni
+  // --- EVENTI NOTTURNI (Movimento, Spawn Alberi, Auto-Merge Foresta) ---
   useEffect(() => {
-    if (actionsLeft <= 0 && !isNight && totalFarmers > 0 && gameState === 'playing') {
-      const t = setTimeout(() => {
-        endDay();
-      }, 1500); // Piccola pausa prima che cali la notte
-      return () => clearTimeout(t);
+    if (isNight && gameState === 'playing') {
+      setGrid(prevGrid => {
+        let newGrid = [...prevGrid];
+        let gridChanged = false;
+
+        // 1. MOVIMENTO E FUSIONE ANIMALI
+        const movedTo = new Set<number>();
+        for (let i = 0; i < newGrid.length; i++) {
+          const cell = newGrid[i];
+          if (cell.type === 'wild_animal' && !movedTo.has(i) && !cell.busyUntil && cell.pendingAction === null) {
+            const neighbors = [];
+            if (i >= 8) neighbors.push(i - 8);
+            if (i < 56) neighbors.push(i + 8);
+            if (i % 8 !== 0) neighbors.push(i - 1);
+            if ((i + 1) % 8 !== 0) neighbors.push(i + 1);
+
+            // Controlla fusione
+            const mergeTarget = neighbors.find(n => newGrid[n].type === 'wild_animal' && !movedTo.has(n));
+
+            if (mergeTarget !== undefined) {
+              const totalCount = Math.min(10, (cell.wildAnimalCount || 1) + (newGrid[mergeTarget].wildAnimalCount || 1));
+              newGrid[mergeTarget] = {
+                ...newGrid[mergeTarget],
+                wildAnimalCount: totalCount
+              };
+              newGrid[i] = {
+                ...newGrid[i],
+                type: 'grass',
+                wildAnimalCount: undefined,
+                wildReproductionTargetTime: undefined
+              };
+              movedTo.add(mergeTarget);
+              movedTo.add(i);
+              gridChanged = true;
+              continue;
+            }
+
+            // Movimento semplice
+            const validGrass = neighbors.filter(n => newGrid[n].type === 'grass' && !newGrid[n].busyUntil && newGrid[n].pendingAction === null);
+
+            if (validGrass.length > 0) {
+              const target = validGrass[Math.floor(Math.random() * validGrass.length)];
+              newGrid[target] = {
+                ...newGrid[target],
+                type: 'wild_animal',
+                wildAnimalCount: cell.wildAnimalCount,
+                wildReproductionTargetTime: cell.wildReproductionTargetTime
+              };
+              newGrid[i] = {
+                ...newGrid[i],
+                type: 'grass',
+                wildAnimalCount: undefined,
+                wildReproductionTargetTime: undefined
+              };
+              movedTo.add(target);
+              movedTo.add(i);
+              gridChanged = true;
+            }
+          }
+        }
+
+        // 2. SPAWN NUOVI ALBERI (da 1 a 3 alberi a notte)
+        const emptyGrass = newGrid.map((c, idx) => c.type === 'grass' && !c.busyUntil && c.pendingAction === null ? idx : -1).filter(idx => idx !== -1);
+        if (emptyGrass.length > 0) {
+          const spawnCount = Math.floor(Math.random() * 3) + 1; // 1-3 alberi
+          for (let k = 0; k < spawnCount; k++) {
+            if (emptyGrass.length === 0) break;
+            const randIndex = Math.floor(Math.random() * emptyGrass.length);
+            const cellId = emptyGrass[randIndex];
+            newGrid[cellId] = { ...newGrid[cellId], type: 'tree' };
+            emptyGrass.splice(randIndex, 1);
+            gridChanged = true;
+          }
+        }
+
+        // 3. AUTO-MERGE ALBERI IN FORESTA (2x2)
+        for (let i = 0; i < newGrid.length; i++) {
+          if (newGrid[i].type === 'tree' && !newGrid[i].busyUntil && newGrid[i].pendingAction === null) {
+            const col = i % 8;
+            const row = Math.floor(i / 8);
+            if (col < 7 && row < 7) {
+              const tl = i;
+              const tr = i + 1;
+              const bl = i + 8;
+              const br = i + 9;
+
+              const isIdleTree = (idx: number) => newGrid[idx].type === 'tree' && !newGrid[idx].busyUntil && newGrid[idx].pendingAction === null;
+
+              if (isIdleTree(tr) && isIdleTree(bl) && isIdleTree(br)) {
+                // Fonde in foresta attiva
+                newGrid[tl] = { ...newGrid[tl], type: 'forest', pendingAction: 'active_forest', lastTickTime: Date.now(), forestTicks: 0 };
+                newGrid[tr] = { ...newGrid[tr], type: 'grass' };
+                newGrid[bl] = { ...newGrid[bl], type: 'grass' };
+                newGrid[br] = { ...newGrid[br], type: 'grass' };
+                gridChanged = true;
+              }
+            }
+          }
+        }
+
+        return gridChanged ? newGrid : prevGrid;
+      });
     }
-  }, [actionsLeft, isNight, totalFarmers, gameState]);
+  }, [isNight, gameState]);
 
   const startNewGame = () => {
     setInventory(INITIAL_INVENTORY);
@@ -830,7 +1013,7 @@ const App: React.FC = () => {
     }
   }, [ALL_QUESTS, completedQuests, gameState]);
 
-  // --- GAME LOOP ---
+  // --- GAME LOOP (Esecuzione Continua Azioni in Sospeso) ---
   useEffect(() => {
     if (gameState !== 'playing') return;
 
@@ -878,7 +1061,7 @@ const App: React.FC = () => {
             addReward('wood', 2);
 
             const newTicks = (updatedCell.forestTicks || 0) + 1;
-            if (newTicks >= 4) { // 4 tick da 15s = 60 secondi
+            if (newTicks >= 4) {
               updatedCell = { ...updatedCell, type: 'grass', pendingAction: null, lastTickTime: undefined, forestTicks: undefined };
             } else {
               updatedCell = { ...updatedCell, lastTickTime: currentTime, forestTicks: newTicks };
@@ -1029,74 +1212,6 @@ const App: React.FC = () => {
         return updatedCell;
       });
 
-      // --- MOVIMENTO E FUSIONE DEGLI ANIMALI SELVATICI ---
-      const movedTo = new Set<number>();
-      for (let i = 0; i < newGrid.length; i++) {
-        const cell = newGrid[i];
-        if (cell.type === 'wild_animal' && !movedTo.has(i) && !cell.busyUntil && cell.pendingAction === null) {
-
-          const neighbors = [];
-          if (i >= 8) neighbors.push(i - 8);
-          if (i < 56) neighbors.push(i + 8);
-          if (i % 8 !== 0) neighbors.push(i - 1);
-          if ((i + 1) % 8 !== 0) neighbors.push(i + 1);
-
-          // Controlla fusione con altri animali
-          const mergeTarget = neighbors.find(n =>
-              newGrid[n].type === 'wild_animal' &&
-              !newGrid[n].busyUntil &&
-              newGrid[n].pendingAction === null &&
-              !movedTo.has(n)
-          );
-
-          if (mergeTarget !== undefined) {
-            const totalCount = Math.min(10, (cell.wildAnimalCount || 1) + (newGrid[mergeTarget].wildAnimalCount || 1));
-            newGrid[mergeTarget] = {
-              ...newGrid[mergeTarget],
-              wildAnimalCount: totalCount
-            };
-            newGrid[i] = {
-              ...newGrid[i],
-              type: 'grass',
-              wildAnimalCount: undefined,
-              wildReproductionTargetTime: undefined
-            };
-            movedTo.add(mergeTarget);
-            movedTo.add(i);
-            gridChanged = true;
-            continue;
-          }
-
-          // Movimento
-          if (Math.random() < 0.02) {
-            const validNeighbors = neighbors.filter(n =>
-                newGrid[n].type === 'grass' &&
-                !newGrid[n].busyUntil &&
-                newGrid[n].pendingAction === null
-            );
-
-            if (validNeighbors.length > 0) {
-              const target = validNeighbors[Math.floor(Math.random() * validNeighbors.length)];
-              newGrid[target] = {
-                ...newGrid[target],
-                type: 'wild_animal',
-                wildAnimalCount: cell.wildAnimalCount,
-                wildReproductionTargetTime: cell.wildReproductionTargetTime
-              };
-              newGrid[i] = {
-                ...newGrid[i],
-                type: 'grass',
-                wildAnimalCount: undefined,
-                wildReproductionTargetTime: undefined
-              };
-              movedTo.add(target);
-              movedTo.add(i);
-              gridChanged = true;
-            }
-          }
-        }
-      }
-
       if (gridChanged) {
         setGrid(newGrid);
         if (Object.keys(newRewards).length > 0) {
@@ -1151,6 +1266,8 @@ const App: React.FC = () => {
       setSelectedCell(null);
       return;
     }
+
+    if (availableFarmers < 1) return;
 
     // Determina il costo in azioni (uguale al numero di cittadini richiesti)
     let costFarmers = 1;
@@ -1562,7 +1679,7 @@ const App: React.FC = () => {
     const styleTag = document.createElement("style");
     styleTag.innerHTML = `
       body { margin: 0; font-family: 'Inter', system-ui, sans-serif; background-color: #86efac; color: #1e293b; user-select: none; -webkit-tap-highlight-color: transparent; }
-      .game-container { max-width: 600px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; background: #bbf7d0; box-shadow: 0 0 50px rgba(0,0,0,0.1); position: relative; padding-bottom: 80px; }
+      .game-container { max-width: 600px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; background: #bbf7d0; box-shadow: 0 0 50px rgba(0,0,0,0.1); position: relative; padding-bottom: 120px; }
       
       .hud-wrapper { background: #0f172a; color: #f8fafc; border-bottom: 4px solid #1e293b; padding: 12px 20px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3); position: sticky; top: 0; z-index: 10; border-radius: 0 0 24px 24px; margin-bottom: 10px; transition: background 2s; }
       .hud-wrapper.night { background: #090e17; border-bottom-color: #0f172a; }
@@ -1571,7 +1688,7 @@ const App: React.FC = () => {
       .stat-card { background: #1e293b; border: 2px solid #334155; border-radius: 12px; padding: 8px 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-weight: 800; font-size: 13px; transition: all 0.2s ease; }
       .stat-card.highlight { border-color: #3b82f6; box-shadow: 0 0 15px rgba(59, 130, 246, 0.2); }
       .stat-card.gold { border-color: #fbbf24; color: #fbbf24; }
-      .stat-card-label { font-size: 9px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; text-align: center; }
+      .stat-card-label { font-size: 10px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; text-align: center; }
       .stat-card-value { display: flex; align-items: center; justify-content: center; gap: 4px; }
 
       .floating-btn-container { position: fixed; bottom: 20px; left: 0; right: 0; display: flex; justify-content: center; gap: 8px; padding: 0 15px; z-index: 20; pointer-events: none; max-width: 600px; margin: 0 auto; flex-wrap: wrap; }
@@ -1583,6 +1700,7 @@ const App: React.FC = () => {
       .btn-market { background: #fbbf24; color: #713f12; }
       .btn-settings { background: #475569; color: white; }
       .btn-sleep { background: #1e3a8a; color: white; border-color: #3b82f6; }
+      .btn-elder { background: #8b5cf6; color: white; border-color: #d8b4fe; box-shadow: 0 0 20px rgba(139, 92, 246, 0.6); position: fixed; right: 20px; top: 120px; flex: none; width: auto; z-index: 30; padding: 12px 18px; border-radius: 50px; }
       
       .badge-notification { position: absolute; top: -6px; right: -6px; background: #ef4444; color: white; font-size: 11px; font-weight: 900; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.2); animation: bounce-strong 1s infinite; }
       @keyframes bounce-strong { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px) scale(1.1); } }
@@ -1684,6 +1802,13 @@ const App: React.FC = () => {
       @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
       @keyframes bounce-slow { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
       .animate-bounce-slow { animation: bounce-slow 2s infinite ease-in-out; }
+
+      /* ELDER MODAL */
+      .elder-chat-box { background: #f8fafc; border: 2px solid #e2e8f0; border-radius: 16px; padding: 20px; display: flex; gap: 15px; align-items: flex-start; }
+      .elder-avatar { background: #8b5cf6; color: white; width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 4px 10px rgba(139, 92, 246, 0.4); }
+      .elder-text { font-size: 15px; color: #1e293b; line-height: 1.5; font-style: italic; }
+      .loading-dots:after { content: '.'; animation: dots 1.5s steps(5, end) infinite; }
+      @keyframes dots { 0%, 20% { color: rgba(0,0,0,0); text-shadow: .25em 0 0 rgba(0,0,0,0), .5em 0 0 rgba(0,0,0,0); } 40% { color: #1e293b; text-shadow: .25em 0 0 rgba(0,0,0,0), .5em 0 0 rgba(0,0,0,0); } 60% { text-shadow: .25em 0 0 #1e293b, .5em 0 0 rgba(0,0,0,0); } 80%, 100% { text-shadow: .25em 0 0 #1e293b, .5em 0 0 #1e293b; } }
     `;
     document.head.appendChild(styleTag);
     return () => { document.head.removeChild(styleTag); };
@@ -1821,6 +1946,11 @@ const App: React.FC = () => {
           </div>
         </div>
 
+        {/* BOTTONE L'ANZIANO DEL VILLAGGIO */}
+        <button className="floating-btn btn-elder pointer-events-auto" onClick={askVillageElder}>
+          <Sparkles size={20} /> Anziano
+        </button>
+
         <div className="floating-btn-container">
           <button className="floating-btn btn-diary" style={{position: 'relative'}} onClick={() => { setShowDiaryModal(true); setUnreadQuests(0); }}>
             <BookMarked size={16} /> Diario
@@ -1866,6 +1996,36 @@ const App: React.FC = () => {
             })}
           </div>
         </div>
+
+        {/* MODAL L'ANZIANO DEL VILLAGGIO (GEMINI API) */}
+        {showElderModal && (
+            <div className="action-modal-overlay" style={{zIndex: 100}} onClick={() => setShowElderModal(false)}>
+              <div className="action-modal" onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                  <h3 style={{ margin: 0, fontSize: '24px', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <Sparkles color="#8b5cf6" /> L'Anziano del Villaggio
+                  </h3>
+                  <button onClick={() => setShowElderModal(false)} style={{ background: '#f1f5f9', border: 'none', padding: '8px', borderRadius: '50%', cursor: 'pointer' }}>
+                    <X size={20} color="#64748b" />
+                  </button>
+                </div>
+                <div className="modal-body">
+                  <div className="elder-chat-box">
+                    <div className="elder-avatar">
+                      <Users size={32} />
+                    </div>
+                    <div className="elder-text">
+                      {isElderThinking ? (
+                          <span className="loading-dots">L'Anziano sta scrutando i presagi</span>
+                      ) : (
+                          <p style={{ margin: 0 }}>"{elderMessage}"</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+        )}
 
         {/* MODAL MENU OPZIONI */}
         {showSettingsModal && (
