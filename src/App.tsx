@@ -87,13 +87,13 @@ const CROPS: Record<CropId, CropConfig> = {
   eggplant: {
     id: 'eggplant', name: 'Melanzana', seedCost: 70, growthTime: 35000,
     minYield: 2, maxYield: 5, minSeeds: 0, maxSeeds: 2, sellPrice: 120,
-    icon: Leaf, color: '#481570' // Sostituito Eggplant mancante in Lucide con Leaf
+    icon: Leaf, color: '#481570'
   }
 };
 
 // --- ALTRI TIPI E INTERFACCE ---
 type CellType = 'grass' | 'water' | 'plowed' | 'growing' | 'ready' | 'tree' | 'forest' | 'rock' | 'house' | 'mine' | 'animal_farm' | 'village' | 'city' | 'county' | 'lumber_mill' | 'stone_mason' | 'wild_animal' | 'port';
-type ActionType = 'plowing' | 'chopping' | 'mining' | 'building_house' | 'building_mine' | 'building_animal_farm' | 'planting_tree' | 'planting_forest' | 'building_village' | 'building_city' | 'building_county' | 'building_lumber_mill' | 'building_stone_mason' | 'building_port' | 'active_mine' | 'active_forest' | 'harvesting' | 'growing' | 'fishing' | 'hunting' | 'crafting_planks' | 'crafting_bricks' | 'spawn_rock' | string | null;
+type ActionType = 'plowing' | 'chopping' | 'mining' | 'building_house' | 'building_mine' | 'building_animal_farm' | 'planting_tree' | 'planting_forest' | 'building_village' | 'building_city' | 'building_county' | 'building_lumber_mill' | 'building_stone_mason' | 'building_port' | 'active_mine' | 'active_forest' | 'harvesting' | 'growing' | 'fishing' | 'hunting' | 'crafting_planks' | 'crafting_bricks' | 'spawn_rock' | 'start_active_forest' | string | null;
 
 interface Inventory {
   coins: number;
@@ -209,7 +209,7 @@ const COSTS = {
 // --- COMPONENTE STICKMAN ANIMATO ---
 const AnimatedStickman = ({ action }: { action: ActionType }) => {
   if (!action) return null;
-  const isStriking = ['chopping', 'mining', 'spawn_rock'].includes(action) || action.startsWith('building_');
+  const isStriking = ['chopping', 'mining', 'spawn_rock', 'active_forest'].includes(action) || action.startsWith('building_');
   const isFarming = ['plowing', 'harvesting', 'crafting_planks', 'crafting_bricks'].includes(action) || action.startsWith('planting_');
   const isHunting = action === 'hunting';
 
@@ -226,7 +226,7 @@ const AnimatedStickman = ({ action }: { action: ActionType }) => {
           {isStriking && (
               <g transform="translate(68, 48) rotate(20)">
                 <line x1="0" y1="-15" x2="0" y2="20" stroke="#78350f" strokeWidth="3" strokeLinecap="round"/>
-                {action === 'chopping' ? (
+                {action === 'chopping' || action === 'active_forest' ? (
                     <path d="M -5 -10 L 12 -15 L 12 5 L -5 0 Z" fill="#94a3b8" stroke="#475569" strokeWidth="1" />
                 ) : action === 'mining' || action === 'spawn_rock' ? (
                     <path d="M -12 -5 Q 0 -15 12 -5 L 0 5 Z" fill="#94a3b8" stroke="#475569" strokeWidth="1"/>
@@ -297,7 +297,6 @@ const generateInitialGrid = (): Cell[] => {
     if (type === 'grass') emptyGrassCells.push(i);
   }
 
-  // Inizializza gli animali in unità singole
   for (let k = 0; k < 8; k++) {
     if (emptyGrassCells.length === 0) break;
     const randIndex = Math.floor(Math.random() * emptyGrassCells.length);
@@ -409,7 +408,7 @@ const App: React.FC = () => {
   const totalFarmers = Math.max(0, baseFarmers - (totalPorts * COSTS.port.farmers) - respawningFarmers.length);
 
   const busyFarmers = grid.reduce((sum, c) => {
-    if (c.pendingAction && c.pendingAction !== 'growing' && c.pendingAction !== 'active_mine' && c.pendingAction !== 'fishing' && c.pendingAction !== 'active_forest') {
+    if (c.pendingAction && c.pendingAction !== 'growing' && c.pendingAction !== 'active_mine' && c.pendingAction !== 'fishing') {
       return sum + (c.farmersUsed || 1);
     }
     return sum;
@@ -810,8 +809,8 @@ const App: React.FC = () => {
               const isIdleTree = (idx: number) => newGrid[idx].type === 'tree' && !newGrid[idx].busyUntil && newGrid[idx].pendingAction === null;
 
               if (isIdleTree(tr) && isIdleTree(bl) && isIdleTree(br)) {
-                // Fonde in foresta attiva
-                newGrid[tl] = { ...newGrid[tl], type: 'forest', pendingAction: 'active_forest', lastTickTime: Date.now(), forestTicks: 0 };
+                // Ora fonde in una foresta (inattiva), non parte automaticamente la raccolta
+                newGrid[tl] = { ...newGrid[tl], type: 'forest' };
                 newGrid[tr] = { ...newGrid[tr], type: 'grass' };
                 newGrid[bl] = { ...newGrid[bl], type: 'grass' };
                 newGrid[br] = { ...newGrid[br], type: 'grass' };
@@ -870,15 +869,6 @@ const App: React.FC = () => {
     });
   }, [inventory, totalFarmers]);
 
-  useEffect(() => {
-    gridRef.current = grid;
-  }, [grid]);
-
-  useEffect(() => {
-    respawningRef.current = respawningFarmers;
-  }, [respawningFarmers]);
-
-  // --- ALGORITMO DI ESPLORAZIONE CON NEBBIA ---
   const reachableCells = useMemo(() => {
     const reachable = new Set<number>();
     const queue = [27];
@@ -1062,7 +1052,7 @@ const App: React.FC = () => {
 
             const newTicks = (updatedCell.forestTicks || 0) + 1;
             if (newTicks >= 4) {
-              updatedCell = { ...updatedCell, type: 'grass', pendingAction: null, lastTickTime: undefined, forestTicks: undefined };
+              updatedCell = { ...updatedCell, type: 'grass', pendingAction: null, lastTickTime: undefined, forestTicks: undefined, farmersUsed: undefined };
             } else {
               updatedCell = { ...updatedCell, lastTickTime: currentTime, forestTicks: newTicks };
             }
@@ -1137,7 +1127,7 @@ const App: React.FC = () => {
           if (updatedCell.pendingAction === 'plowing') newType = 'plowed';
           else if (updatedCell.pendingAction === 'planting_tree') newType = 'tree';
           else if (updatedCell.pendingAction === 'planting_forest') {
-            newType = 'forest'; newPendingAction = 'active_forest'; lastTickTime = currentTime; forestTicks = 0;
+            newType = 'forest';
           }
           else if (updatedCell.pendingAction === 'spawn_rock') newType = 'rock';
           else if (updatedCell.pendingAction === 'building_village') newType = 'village';
@@ -1272,6 +1262,7 @@ const App: React.FC = () => {
     // Determina il costo in azioni (uguale al numero di cittadini richiesti)
     let costFarmers = 1;
     if (action === 'hunting') costFarmers = 2;
+    else if (action === 'start_active_forest') costFarmers = 3;
     else if (action?.startsWith('building_')) {
       const buildingType = action.replace('building_', '');
       costFarmers = COSTS[buildingType as keyof typeof COSTS]?.farmers || 1;
@@ -1281,6 +1272,15 @@ const App: React.FC = () => {
     else if (action === 'spawn_rock') costFarmers = COSTS.rock.farmers;
 
     if (actionsLeft < costFarmers) return;
+
+    if (action === 'start_active_forest') {
+      setGrid(prev => prev.map(c => c.id === cellId ? {
+        ...c, pendingAction: 'active_forest', lastTickTime: Date.now(), forestTicks: 0, farmersUsed: costFarmers
+      } : c));
+      setActionsUsedToday(prev => prev + costFarmers);
+      setSelectedCell(null);
+      return;
+    }
 
     if (action === 'hunting') {
       const duration = ACTION_TIMES.hunting;
@@ -1504,12 +1504,12 @@ const App: React.FC = () => {
       const progress = ((cell.forestTicks || 0) / 4) * 100;
       return (
           <div className="progress-container">
-            <div style={{ position: 'relative', marginTop: '-5px', display: 'flex', gap: '-5px' }}>
+            <AnimatedStickman action="active_forest" />
+            <div style={{ position: 'relative', marginTop: '10px', display: 'flex', gap: '-5px', opacity: 0.3, transform: 'scale(1.2)' }}>
               <TreePine size={28} color="#14532d" fill="#166534" />
               <TreePine size={28} color="#14532d" fill="#166534" style={{marginLeft: '-10px'}} />
-              <Axe size={16} color="#fbbf24" style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 5 }} />
             </div>
-            <div className="progress-bar-bg">
+            <div className="progress-bar-bg" style={{bottom: '4px', position: 'absolute'}}>
               <div className="progress-bar-fill" style={{ width: `${progress}%`, background: '#4ade80' }}></div>
             </div>
           </div>
@@ -1553,7 +1553,7 @@ const App: React.FC = () => {
       const timeLeft = cell.busyUntil - now;
       const progress = 100 - Math.max(0, Math.min(100, (timeLeft / cell.busyTotalDuration) * 100));
       const isPassive = cell.pendingAction === 'growing';
-      const isPlayerAction = cell.pendingAction && !['growing', 'fishing', 'active_mine', 'active_forest'].includes(cell.pendingAction);
+      const isPlayerAction = cell.pendingAction && !['growing', 'fishing', 'active_mine'].includes(cell.pendingAction);
 
       return (
           <div className="progress-container">
@@ -2202,7 +2202,7 @@ const App: React.FC = () => {
                       </div>
                   ) : (
                       <>
-                        {actionsLeft <= 0 && !['growing', 'mine', 'forest', 'animal_farm', 'water'].includes(activeCell.type) && (
+                        {actionsLeft <= 0 && !['growing', 'mine', 'animal_farm', 'water'].includes(activeCell.type) && !(activeCell.type === 'forest' && activeCell.pendingAction === 'active_forest') && (
                             <div style={{ padding: '10px', background: '#fef2f2', color: '#ef4444', textAlign: 'center', borderRadius: '12px', marginBottom: '15px', fontWeight: 'bold' }}>
                               Azioni esaurite per oggi!
                             </div>
@@ -2497,13 +2497,29 @@ const App: React.FC = () => {
                             </div>
                         )}
 
-                        {activeCell.type === 'forest' && (
+                        {activeCell.type === 'forest' && activeCell.pendingAction === 'active_forest' && (
                             <div style={{ textAlign: 'center', padding: '20px', color: '#64748b' }}>
                               <div style={{display: 'flex', justifyContent: 'center', marginBottom: '10px'}}>
                                 <TreePine size={40} color="#15803d" />
                                 <TreePine size={40} color="#15803d" style={{marginLeft: '-15px'}} />
                               </div>
-                              Il bosco sta crescendo rigoglioso.<br/>I taglialegna generano automaticamente 2 legna ogni 15s. Scomparirà dopo 60s. ({activeCell.forestTicks || 0}/4)
+                              I taglialegna stanno disboscando la foresta.<br/>Generano automaticamente 2 legna ogni 15s. Scomparirà dopo 60s. ({activeCell.forestTicks || 0}/4)
+                            </div>
+                        )}
+
+                        {activeCell.type === 'forest' && activeCell.pendingAction !== 'active_forest' && (
+                            <div style={{ textAlign: 'center', padding: '10px' }}>
+                              <div style={{display: 'flex', justifyContent: 'center', marginBottom: '10px'}}>
+                                <TreePine size={40} color="#15803d" />
+                                <TreePine size={40} color="#15803d" style={{marginLeft: '-15px'}} />
+                              </div>
+                              <div style={{fontSize: '13px', color: '#64748b', marginBottom: '15px'}}>Bosco Rigoglioso. Ricco di legname, richiede una squadra di taglialegna per essere disboscato.</div>
+                              <button className="action-btn btn-chop" disabled={actionsLeft < 3} onClick={() => startAction(activeCell.id, 'start_active_forest')}>
+                                <Axe size={20} /> Invia Squadra Taglialegna
+                                <span className="action-badge" style={{background: actionsLeft >= 3 ? 'rgba(255,255,255,0.2)' : '#ef4444'}}>
+                                            3<Zap size={10} />
+                                        </span>
+                              </button>
                             </div>
                         )}
 
