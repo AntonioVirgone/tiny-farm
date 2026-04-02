@@ -5,8 +5,51 @@ import {
   Home, Users, Hammer, Warehouse, PawPrint, Tent,
   Droplets, Fish, Factory, Box, Layers, Rabbit, Crosshair, Bone, Gem,
   Ship, Anchor, Lock, Castle, Landmark, Skull, CloudFog, Package,
-  BookMarked, CheckCircle, AlertTriangle, Play, Leaf
+  BookMarked, CheckCircle, AlertTriangle, Play, Leaf, Save, Info, Download, Upload,
+  Settings, LogOut
 } from 'lucide-react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, doc, setDoc, getDoc } from 'firebase/firestore';
+
+// --- CONFIGURAZIONE FIREBASE (Per il Salvataggio Cloud & Locale) ---
+declare var __firebase_config: string | undefined;
+declare var __app_id: string | undefined;
+declare var __initial_auth_token: string | undefined;
+
+let app: any = null;
+let auth: any = null;
+let db: any = null;
+let appId = 'local-dev-app'; // ID di default per l'ambiente locale
+
+// Configurazione Firebase locale fornita
+const localFirebaseConfig = {
+  apiKey: "AIzaSyBI4uaGf4XvlnFJcVDq5lcmQPueD0rJmCo",
+  authDomain: "tiny-farm-be44a.firebaseapp.com",
+  projectId: "tiny-farm-be44a",
+  storageBucket: "tiny-farm-be44a.firebasestorage.app",
+  messagingSenderId: "1097896561514",
+  appId: "1:1097896561514:web:dbdf4147ccdded6f82b313"
+};
+
+try {
+  let firebaseConfig = localFirebaseConfig;
+
+  // Se siamo in un ambiente in cui viene iniettata una config diversa, usiamo quella
+  if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+    firebaseConfig = JSON.parse(__firebase_config);
+  }
+
+  app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+
+  if (typeof __app_id !== 'undefined' && __app_id) {
+    appId = __app_id;
+  }
+} catch (e) {
+  console.warn("Firebase non inizializzato. Il salvataggio cloud potrebbe non essere disponibile.", e);
+}
 
 // --- TIPI E CONFIGURAZIONE DELLE PIANTE ---
 type CropId = 'wheat' | 'tomato' | 'carrot' | 'eggplant';
@@ -44,7 +87,7 @@ const CROPS: Record<CropId, CropConfig> = {
   eggplant: {
     id: 'eggplant', name: 'Melanzana', seedCost: 70, growthTime: 35000,
     minYield: 2, maxYield: 5, minSeeds: 0, maxSeeds: 2, sellPrice: 120,
-    icon: Leaf, color: '#481570'
+    icon: Leaf, color: '#481570' // Sostituito Eggplant mancante in Lucide con Leaf
   }
 };
 
@@ -269,13 +312,18 @@ const generateInitialGrid = (): Cell[] => {
 
 const App: React.FC = () => {
   const [gameState, setGameState] = useState<'start' | 'playing' | 'gameover'>('start');
+  const [user, setUser] = useState<any>(null);
+  const [hasSave, setHasSave] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const [inventory, setInventory] = useState<Inventory>(INITIAL_INVENTORY);
   const [unlocked, setUnlocked] = useState<UnlockedBuildings>(INITIAL_UNLOCKED);
 
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showMarketModal, setShowMarketModal] = useState(false);
   const [showInventoryModal, setShowInventoryModal] = useState(false);
   const [showDiaryModal, setShowDiaryModal] = useState(false);
+  const [showTutorialModal, setShowTutorialModal] = useState(false);
   const [completedQuests, setCompletedQuests] = useState<string[]>([]);
   const [unreadQuests, setUnreadQuests] = useState(0);
   const [toasts, setToasts] = useState<{id: string, title: string, type?: 'success' | 'danger'}[]>([]);
@@ -287,7 +335,59 @@ const App: React.FC = () => {
 
   const gridRef = useRef(grid);
   const respawningRef = useRef(respawningFarmers);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Salva lo stato completo in un ref per il salvataggio automatico senza dipendenze continue
+  const stateRef = useRef({ inventory, unlocked, grid, completedQuests, respawningFarmers });
+  useEffect(() => {
+    stateRef.current = { inventory, unlocked, grid, completedQuests, respawningFarmers };
+  }, [inventory, unlocked, grid, completedQuests, respawningFarmers]);
+
+  // --- GESTIONE FIREBASE (AUTENTICAZIONE) ---
+  useEffect(() => {
+    if (!auth) return;
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (e: any) {
+        console.error("Auth error", e);
+        if (e.code === 'auth/configuration-not-found' || e.code === 'auth/operation-not-allowed') {
+          console.warn("⚠️ Attenzione: Autenticazione Anonima non abilitata nella tua console Firebase! Si userà il salvataggio locale.");
+        }
+      }
+    };
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, setUser);
+    return () => unsubscribe();
+  }, []);
+
+  // --- RICERCA SALVATAGGIO (Cloud + Locale fallback) ---
+  useEffect(() => {
+    const localSave = localStorage.getItem('fattoria_avanzata_save');
+    if (localSave) {
+      setHasSave(true);
+    }
+
+    if (!user || !db) return;
+    const checkCloudSave = async () => {
+      try {
+        const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'savegame', 'data');
+        const snap = await getDoc(docRef);
+        if (snap.exists()) {
+          setHasSave(true);
+        }
+      } catch (e) {
+        console.error("Check Save Error", e);
+      }
+    };
+    checkCloudSave();
+  }, [user]);
+
+  // --- LOGICA CITTADINI E NAVI ---
   const totalPorts = grid.filter(c => c.type === 'port').length;
   const baseFarmers =
       grid.filter(c => c.type === 'house').length * 1 +
@@ -302,6 +402,152 @@ const App: React.FC = () => {
       setGameState('gameover');
     }
   }, [totalFarmers, gameState]);
+
+  // --- SALVATAGGIO (Cloud + Locale Fallback) ---
+  const handleSaveGame = async (isAuto = false) => {
+    if (!isAuto) setIsSaving(true);
+
+    const saveData = {
+      inventory: stateRef.current.inventory,
+      unlocked: stateRef.current.unlocked,
+      grid: JSON.stringify(stateRef.current.grid),
+      completedQuests: stateRef.current.completedQuests,
+      respawningFarmers: JSON.stringify(stateRef.current.respawningFarmers)
+    };
+
+    // Salva sempre in locale come backup
+    try {
+      localStorage.setItem('fattoria_avanzata_save', JSON.stringify(saveData));
+      setHasSave(true);
+    } catch(e) {
+      console.error("Errore salvataggio locale", e);
+    }
+
+    if (user && db) {
+      try {
+        const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'savegame', 'data');
+        await setDoc(docRef, saveData);
+        const msg = isAuto ? 'Autosalvataggio cloud completato' : 'Partita salvata nel Cloud!';
+        setToasts(prev => [...prev, { id: 'save-' + Date.now(), title: msg, type: 'success' }]);
+      } catch (e) {
+        console.error("Save Game Error", e);
+        if (!isAuto) setToasts(prev => [...prev, { id: 'err-save', title: 'Salvataggio Cloud fallito (salvato in locale)', type: 'danger' }]);
+      }
+    } else {
+      const msg = isAuto ? 'Autosalvataggio locale completato' : 'Partita salvata in locale (Cloud disconnesso)';
+      setToasts(prev => [...prev, { id: 'save-' + Date.now(), title: msg, type: 'success' }]);
+    }
+
+    if (!isAuto) setIsSaving(false);
+    setTimeout(() => setToasts(prev => prev.filter(t => !t.id.startsWith('save-'))), 3000);
+  };
+
+  const handleLoadGame = async () => {
+    let loadedData = null;
+
+    // Prova prima dal cloud se utente connesso
+    if (user && db) {
+      try {
+        const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'savegame', 'data');
+        const snap = await getDoc(docRef);
+        if (snap.exists()) {
+          loadedData = snap.data();
+        }
+      } catch (e) {
+        console.error("Load Game Error", e);
+      }
+    }
+
+    // Fallback al localStorage se non trovato o cloud in errore
+    if (!loadedData) {
+      const localSave = localStorage.getItem('fattoria_avanzata_save');
+      if (localSave) {
+        loadedData = JSON.parse(localSave);
+        setToasts(prev => [...prev, { id: 'load-local', title: 'Caricato salvataggio locale', type: 'success' }]);
+      }
+    }
+
+    if (loadedData) {
+      setInventory(loadedData.inventory);
+      setUnlocked(loadedData.unlocked);
+      setGrid(JSON.parse(loadedData.grid));
+      setCompletedQuests(loadedData.completedQuests || []);
+      setRespawningFarmers(JSON.parse(loadedData.respawningFarmers || '[]'));
+      setGameState('playing');
+      setTimeout(() => setToasts(prev => prev.filter(t => t.id !== 'load-local')), 3000);
+    } else {
+      setToasts(prev => [...prev, { id: 'err-load', title: 'Nessun salvataggio trovato', type: 'danger' }]);
+      setTimeout(() => setToasts(prev => prev.filter(t => t.id !== 'err-load')), 3000);
+    }
+  };
+
+  const handleExportSave = () => {
+    // Peschiamo i dati sempre dallo stateRef per garantire che esportiamo l'ultimo stato (anche senza aver cliccato "Salva")
+    const saveData = {
+      inventory: stateRef.current.inventory,
+      unlocked: stateRef.current.unlocked,
+      grid: JSON.stringify(stateRef.current.grid),
+      completedQuests: stateRef.current.completedQuests,
+      respawningFarmers: JSON.stringify(stateRef.current.respawningFarmers)
+    };
+    const blob = new Blob([JSON.stringify(saveData, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `fattoria_save_${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setToasts(prev => [...prev, { id: 'export-' + Date.now(), title: 'File di salvataggio esportato!', type: 'success' }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => !t.id.startsWith('export-'))), 3000);
+  };
+
+  const handleImportSave = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const content = e.target?.result as string;
+        const loadedData = JSON.parse(content);
+
+        if (!loadedData.inventory || !loadedData.grid) throw new Error("File JSON non valido");
+
+        setInventory(loadedData.inventory);
+        setUnlocked(loadedData.unlocked);
+        setGrid(JSON.parse(loadedData.grid));
+        setCompletedQuests(loadedData.completedQuests || []);
+        setRespawningFarmers(JSON.parse(loadedData.respawningFarmers || '[]'));
+
+        // Aggiorna anche il salvataggio locale per comodità
+        localStorage.setItem('fattoria_avanzata_save', JSON.stringify(loadedData));
+        setHasSave(true);
+
+        // Se eravamo nel menu, avviamo il gioco
+        setGameState('playing');
+
+        setToasts(prev => [...prev, { id: 'load-file', title: 'Partita caricata dal file!', type: 'success' }]);
+        setTimeout(() => setToasts(prev => prev.filter(t => t.id !== 'load-file')), 3000);
+      } catch (err) {
+        console.error(err);
+        alert("Errore nell'importazione del file di salvataggio. Assicurati che sia un file JSON valido generato dal gioco.");
+      }
+    };
+    reader.readAsText(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // Autosalvataggio ogni 60 secondi
+  useEffect(() => {
+    if (gameState !== 'playing') return;
+    const autoSaveInterval = setInterval(() => {
+      handleSaveGame(true);
+    }, 60000);
+    return () => clearInterval(autoSaveInterval);
+  }, [gameState]);
+
 
   // Logica Eventi Casuali Bilanciati
   useEffect(() => {
@@ -355,7 +601,7 @@ const App: React.FC = () => {
     return () => clearInterval(eventInterval);
   }, [gameState]);
 
-  const resetGame = () => {
+  const startNewGame = () => {
     setInventory(INITIAL_INVENTORY);
     setUnlocked(INITIAL_UNLOCKED);
     setGrid(generateInitialGrid());
@@ -404,7 +650,6 @@ const App: React.FC = () => {
     respawningRef.current = respawningFarmers;
   }, [respawningFarmers]);
 
-  // --- LOGICA CITTADINI E NAVI ---
   const busyFarmers = grid.reduce((sum, c) => {
     if (c.pendingAction && c.pendingAction !== 'growing' && c.pendingAction !== 'active_mine' && c.pendingAction !== 'fishing' && c.pendingAction !== 'active_forest') {
       return sum + (c.farmersUsed || 1);
@@ -1263,12 +1508,14 @@ const App: React.FC = () => {
       .stat-card-label { font-size: 10px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; text-align: center; }
       .stat-card-value { display: flex; align-items: center; justify-content: center; gap: 6px; }
 
-      .floating-btn-container { position: fixed; bottom: 20px; left: 0; right: 0; display: flex; justify-content: center; gap: 12px; padding: 0 15px; z-index: 20; pointer-events: none; max-width: 600px; margin: 0 auto; flex-wrap: wrap; }
-      .floating-btn { pointer-events: auto; padding: 12px 20px; border-radius: 30px; font-weight: 800; font-size: 15px; display: flex; align-items: center; justify-content: center; gap: 8px; border: 3px solid white; cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.3); transition: transform 0.1s; flex: 1; max-width: 160px; white-space: nowrap; }
+      .floating-btn-container { position: fixed; bottom: 20px; left: 0; right: 0; display: flex; justify-content: center; gap: 10px; padding: 0 15px; z-index: 20; pointer-events: none; max-width: 600px; margin: 0 auto; flex-wrap: wrap; }
+      .floating-btn { pointer-events: auto; padding: 12px 18px; border-radius: 30px; font-weight: 800; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 6px; border: 3px solid white; cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.3); transition: transform 0.1s; flex: 1; max-width: 140px; white-space: nowrap; }
       .floating-btn:active { transform: scale(0.95); }
+      .floating-btn:disabled { opacity: 0.5; cursor: not-allowed; }
       .btn-inventory { background: #3b82f6; color: white; }
       .btn-diary { background: #a855f7; color: white; }
       .btn-market { background: #fbbf24; color: #713f12; }
+      .btn-settings { background: #475569; color: white; }
       
       .badge-notification { position: absolute; top: -6px; right: -6px; background: #ef4444; color: white; font-size: 11px; font-weight: 900; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.2); animation: bounce-strong 1s infinite; }
       @keyframes bounce-strong { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px) scale(1.1); } }
@@ -1359,7 +1606,7 @@ const App: React.FC = () => {
       .fullscreen-menu { position: fixed; inset: 0; background: #0f172a; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; text-align: center; padding: 20px; }
       .fullscreen-menu h1 { font-size: 3rem; color: #4ade80; margin-bottom: 10px; font-weight: 900; letter-spacing: -1px; }
       .fullscreen-menu p { color: #94a3b8; font-size: 1.1rem; max-width: 500px; margin-bottom: 40px; line-height: 1.5; }
-      .btn-start { background: #3b82f6; color: white; padding: 18px 40px; font-size: 1.4rem; font-weight: 800; border: none; border-radius: 50px; cursor: pointer; transition: transform 0.2s, background 0.2s; display: flex; align-items: center; gap: 10px; box-shadow: 0 10px 25px rgba(59, 130, 246, 0.4); }
+      .btn-start { background: #3b82f6; color: white; padding: 18px 40px; font-size: 1.4rem; font-weight: 800; border: none; border-radius: 50px; cursor: pointer; transition: transform 0.2s, background 0.2s; display: flex; align-items: center; justify-content: center; gap: 10px; box-shadow: 0 10px 25px rgba(59, 130, 246, 0.4); width: 100%; max-width: 300px;}
       .btn-start:hover { background: #2563eb; transform: scale(1.05); }
       .game-over-title { color: #ef4444 !important; }
 
@@ -1382,9 +1629,48 @@ const App: React.FC = () => {
             <br/><br/>
             <strong>Attenzione:</strong> Le tue decisioni contano. Il gioco include eventi casuali pericolosi. Se perdi tutti i tuoi cittadini, la partita terminerà!
           </p>
-          <button className="btn-start" onClick={() => setGameState('playing')}>
-            <Play size={28} /> Inizia Partita
-          </button>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', alignItems: 'center', width: '100%' }}>
+            {hasSave && (
+                <button className="btn-start" style={{ background: '#10b981' }} onClick={handleLoadGame}>
+                  <Play size={28} /> Continua Partita
+                </button>
+            )}
+            <button className="btn-start" onClick={startNewGame}>
+              <Play size={28} /> {hasSave ? 'Nuova Partita' : 'Inizia Partita'}
+            </button>
+            <button className="btn-start" style={{ background: '#64748b' }} onClick={() => setShowTutorialModal(true)}>
+              <BookMarked size={28} /> Tutorial & Regole
+            </button>
+          </div>
+
+          {showTutorialModal && (
+              <div className="action-modal-overlay" style={{zIndex: 110}} onClick={() => setShowTutorialModal(false)}>
+                <div className="action-modal" style={{color: '#1e293b', textAlign: 'left'}} onClick={e => e.stopPropagation()}>
+                  <div className="modal-header">
+                    <h3 style={{ margin: 0, fontSize: '24px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <Info color="#3b82f6" /> Tutorial & Regole
+                    </h3>
+                    <button onClick={() => setShowTutorialModal(false)} style={{ background: '#f1f5f9', border: 'none', padding: '8px', borderRadius: '50%', cursor: 'pointer' }}>
+                      <X size={20} color="#64748b" />
+                    </button>
+                  </div>
+                  <div className="modal-body" style={{fontSize: '14px', lineHeight: '1.6'}}>
+                    <h4 style={{color: '#3b82f6', marginTop: 0}}>👥 Cittadini e Popolazione</h4>
+                    <p>I cittadini sono la tua forza lavoro. Ogni azione sulla mappa richiede cittadini disponibili. Costruisci Case e uniscile in Villaggi, Città e Contee per aumentare la tua popolazione massima.</p>
+
+                    <h4 style={{color: '#10b981'}}>🏗️ Progressione e Sblocchi</h4>
+                    <p>Raccogli materiali di base (Legna e Pietra) per sbloccare nuove strutture. Quando raggiungi i requisiti di risorse e popolazione per la prima volta, l'edificio si sbloccherà permanentemente.</p>
+
+                    <h4 style={{color: '#fbbf24'}}>🌫️ Esplorazione e Navigazione</h4>
+                    <p>Il mare è avvolto dalla nebbia di guerra. Costruisci un <strong>Porto</strong> (che necessita di 5 cittadini come equipaggio fisso) per diradare la nebbia e sbloccare le navi da pesca per il sostentamento.</p>
+
+                    <h4 style={{color: '#ef4444'}}>⚠️ Eventi Casuali e Sopravvivenza</h4>
+                    <p>Fai molta attenzione! Malattie, branchi di lupi affamati (se stermini gli animali selvatici) e banditi via nave (dopo aver costruito il porto) possono colpire il tuo insediamento. Se la popolazione scende a zero, sarà <strong>Game Over</strong>.</p>
+                  </div>
+                </div>
+              </div>
+          )}
         </div>
     );
   }
@@ -1398,8 +1684,8 @@ const App: React.FC = () => {
             L'ultimo dei tuoi cittadini ha perso la vita.
             Il tuo insediamento è ora solo una rovina abbandonata, destinata ad essere consumata dalla natura.
           </p>
-          <button className="btn-start" onClick={resetGame}>
-            Ricomincia
+          <button className="btn-start" onClick={startNewGame}>
+            Ricomincia Nuova Partita
           </button>
         </div>
     );
@@ -1407,13 +1693,22 @@ const App: React.FC = () => {
 
   return (
       <div className="game-container">
+        {/* Input file nascosto per l'upload */}
+        <input
+            type="file"
+            accept=".json"
+            ref={fileInputRef}
+            onChange={handleImportSave}
+            style={{ display: 'none' }}
+        />
+
         <div className="toast-container">
           {toasts.map(t => (
               <div key={t.id} className={`toast ${t.type === 'danger' ? 'toast-danger' : ''}`}>
                 {t.type === 'danger' ? <AlertTriangle size={24} /> : <CheckCircle size={24} color="#064e3b" />}
                 <div>
                   <div style={{fontSize: '10px', textTransform: 'uppercase', opacity: 0.8}}>
-                    {t.type === 'danger' ? 'Avviso Pericolo' : 'Obiettivo Completato'}
+                    {t.type === 'danger' ? 'Avviso Pericolo' : 'Notifica'}
                   </div>
                   <div>{t.title}</div>
                 </div>
@@ -1458,6 +1753,9 @@ const App: React.FC = () => {
           <button className="floating-btn btn-market" onClick={() => setShowMarketModal(true)}>
             <Store size={20} /> Mercato
           </button>
+          <button className="floating-btn btn-settings" onClick={() => setShowSettingsModal(true)}>
+            <Settings size={20} /> Menu
+          </button>
         </div>
 
         <div className="grid-wrapper">
@@ -1476,6 +1774,36 @@ const App: React.FC = () => {
             })}
           </div>
         </div>
+
+        {/* MODAL MENU OPZIONI */}
+        {showSettingsModal && (
+            <div className="action-modal-overlay" style={{zIndex: 60}} onClick={() => setShowSettingsModal(false)}>
+              <div className="action-modal" onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                  <h3 style={{ margin: 0, fontSize: '24px', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <Settings color="#475569" /> Menu di Gioco
+                  </h3>
+                  <button onClick={() => setShowSettingsModal(false)} style={{ background: '#f1f5f9', border: 'none', padding: '8px', borderRadius: '50%', cursor: 'pointer' }}>
+                    <X size={20} color="#64748b" />
+                  </button>
+                </div>
+                <div className="modal-body">
+                  <button className="action-btn" style={{background: '#10b981', color: 'white'}} onClick={() => { handleSaveGame(false); setShowSettingsModal(false); }}>
+                    <Save size={20} /> Salva Partita
+                  </button>
+                  <button className="action-btn" style={{background: '#3b82f6', color: 'white'}} onClick={() => { handleExportSave(); setShowSettingsModal(false); }}>
+                    <Download size={20} /> Esporta Salvataggio (.json)
+                  </button>
+                  <button className="action-btn" style={{background: '#f59e0b', color: 'white'}} onClick={() => { fileInputRef.current?.click(); setShowSettingsModal(false); }}>
+                    <Upload size={20} /> Importa Salvataggio (.json)
+                  </button>
+                  <button className="action-btn" style={{background: '#ef4444', color: 'white'}} onClick={() => { setGameState('start'); setShowSettingsModal(false); }}>
+                    <LogOut size={20} /> Torna al Menu Principale
+                  </button>
+                </div>
+              </div>
+            </div>
+        )}
 
         {showDiaryModal && (
             <div className="action-modal-overlay" style={{zIndex: 60}} onClick={() => setShowDiaryModal(false)}>
