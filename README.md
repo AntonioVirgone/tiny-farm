@@ -1,73 +1,73 @@
-# React + TypeScript + Vite
+# 🚜 Fattoria Avanzata
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Un simulatore gestionale web-based con elementi di city-building, esplorazione e sopravvivenza.
 
-Currently, two official plugins are available:
+Fattoria Avanzata è un videogioco gestionale sviluppato in React. Giocato su una griglia interattiva 8x8, sfida il giocatore a bilanciare la raccolta di risorse, la crescita demografica e l'esplorazione territoriale, espandendo un piccolo insediamento fino a farlo diventare una prospera contea.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+### 🌟 Caratteristiche Principali
 
-## React Compiler
+Gestione Dinamica dei Cittadini: La tua forza lavoro non è infinita. Assegna i cittadini alle mansioni, ma attenzione ai rischi (es. incidenti di caccia).
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Meccanica di Fusione (Merge 2x2): Combina gli edifici adiacenti per sbloccare insediamenti più grandi (Casa ➔ Villaggio ➔ Città ➔ Contea).
 
-## Expanding the ESLint configuration
+Nebbia di Guerra (Fog of War): Il mare nasconde terre inesplorate. Costruisci navi e porti per diradare la nebbia e scoprire nuove risorse.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+Economia di Mercato: Compra semi e vendi le tue eccedenze, con meccaniche di salvaguardia per non decimare le tue scorte vitali (come il bestiame).
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+Eventi e Tempo Reale: Coltivazioni, estrazione mineraria e riproduzione degli animali progrediscono passivamente nel tempo.
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+### 🎮 Meccaniche di Gioco
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+#### 🎒 Risorse e Inventario
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Il gioco simula un'economia stratificata che include:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+Valuta base: Monete (🪙)
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+Materie prime: Legna, Pietra, Minerali (Ferro, Rame, Oro).
+
+Materiali lavorati: Assi di legno, Mattoni.
+
+Agricoltura e Cibo: Grano, Carote, Pomodori (con gestione dei semi), Pesce e Carne selvatica.
+
+Bestiame: Animali allevati in fattoria.
+
+#### 👥 Popolazione e Lavoro
+
+Ogni azione (arare, costruire, raccogliere) "occupa" temporaneamente uno o più cittadini.
+
+L'espansione demografica avviene migliorando le strutture abitative.
+
+Rischio: Alcune azioni (come la caccia) hanno un tasso di mortalità (15%). I cittadini deceduti affrontano un periodo di respawn di 40 secondi prima di tornare disponibili.
+
+#### 🌫️ Esplorazione Navale
+
+La mappa iniziale è limitata dall'acqua. Costruendo un Porto, il giocatore sacrifica permanentemente parte dei cittadini per formare un equipaggio navale, ma sblocca la capacità di pescare e dissolve la nebbia che copre l'altra sponda del mare.
+
+#### 🏢 Edifici e Strutture
+
+Il gioco include diverse strutture produttive (Miniera, Segheria, Tagliapietre, Fattoria Animali).
+
+Gli insediamenti seguono una meccanica di fusione spaziale 2x2:
+
+Casa (+1 Cittadino)
+
+Villaggio (+6 Cittadini) - Richiede 4 Case 2x2
+
+Città (+30 Cittadini) - Richiede 4 Villaggi 2x2
+
+Contea (+100 Cittadini) - Richiede 4 Città 2x2
+
+#### ⚖️ Il Mercato Locale
+
+Un'interfaccia dedicata per convertire le risorse in ricchezza. Include un sistema di Salvaguardia del Bestiame: il mercato impedisce la vendita accidentale degli ultimi 2 animali per garantire che la fattoria possa continuare a riprodursi.
+
+### 🛠️ Tecnologie Utilizzate
+
+React (Hooks: useState, useEffect, useMemo, useRef)
+
+TypeScript (Tipizzazione rigorosa per entità e inventario)
+
+Lucide React (Set di icone per l'interfaccia grafica e la mappa)
+
+CSS-in-JS / Inline Styles (Gestione dinamica di progress bar e animazioni)

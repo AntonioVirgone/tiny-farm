@@ -20,9 +20,8 @@ declare var __initial_auth_token: string | undefined;
 let app: any = null;
 let auth: any = null;
 let db: any = null;
-let appId = 'local-dev-app'; // ID di default per l'ambiente locale
+let appId = 'local-dev-app';
 
-// Configurazione Firebase locale fornita
 const localFirebaseConfig = {
   apiKey: "AIzaSyBI4uaGf4XvlnFJcVDq5lcmQPueD0rJmCo",
   authDomain: "tiny-farm-be44a.firebaseapp.com",
@@ -34,16 +33,12 @@ const localFirebaseConfig = {
 
 try {
   let firebaseConfig = localFirebaseConfig;
-
-  // Se siamo in un ambiente in cui viene iniettata una config diversa, usiamo quella
   if (typeof __firebase_config !== 'undefined' && __firebase_config) {
     firebaseConfig = JSON.parse(__firebase_config);
   }
-
   app = initializeApp(firebaseConfig);
   auth = getAuth(app);
   db = getFirestore(app);
-
   if (typeof __app_id !== 'undefined' && __app_id) {
     appId = __app_id;
   }
@@ -51,156 +46,71 @@ try {
   console.warn("Firebase non inizializzato. Il salvataggio cloud potrebbe non essere disponibile.", e);
 }
 
-// --- TIPI E CONFIGURAZIONE DELLE PIANTE ---
+// --- TIPI E CONFIGURAZIONE ---
 type CropId = 'wheat' | 'tomato' | 'carrot' | 'eggplant';
 
 interface CropConfig {
-  id: CropId;
-  name: string;
-  seedCost: number;
-  growthTime: number;
-  minYield: number;
-  maxYield: number;
-  minSeeds: number;
-  maxSeeds: number;
-  sellPrice: number;
-  icon: React.ElementType;
-  color: string;
+  id: CropId; name: string; seedCost: number; growthTime: number;
+  minYield: number; maxYield: number; minSeeds: number; maxSeeds: number;
+  sellPrice: number; icon: React.ElementType; color: string;
 }
 
 const CROPS: Record<CropId, CropConfig> = {
-  wheat: {
-    id: 'wheat', name: 'Grano', seedCost: 20, growthTime: 10000,
-    minYield: 1, maxYield: 2, minSeeds: 0, maxSeeds: 1, sellPrice: 30,
-    icon: Wheat, color: '#ca8a04'
-  },
-  tomato: {
-    id: 'tomato', name: 'Pomodoro', seedCost: 50, growthTime: 20000,
-    minYield: 8, maxYield: 12, minSeeds: 2, maxSeeds: 4, sellPrice: 20,
-    icon: Apple, color: '#ef4444'
-  },
-  carrot: {
-    id: 'carrot', name: 'Carota', seedCost: 35, growthTime: 15000,
-    minYield: 3, maxYield: 5, minSeeds: 1, maxSeeds: 2, sellPrice: 40,
-    icon: Carrot, color: '#f97316'
-  },
-  eggplant: {
-    id: 'eggplant', name: 'Melanzana', seedCost: 70, growthTime: 35000,
-    minYield: 2, maxYield: 5, minSeeds: 0, maxSeeds: 2, sellPrice: 120,
-    icon: Leaf, color: '#481570'
-  }
+  wheat: { id: 'wheat', name: 'Grano', seedCost: 20, growthTime: 10000, minYield: 1, maxYield: 2, minSeeds: 0, maxSeeds: 1, sellPrice: 30, icon: Wheat, color: '#ca8a04' },
+  tomato: { id: 'tomato', name: 'Pomodoro', seedCost: 50, growthTime: 20000, minYield: 8, maxYield: 12, minSeeds: 2, maxSeeds: 4, sellPrice: 20, icon: Apple, color: '#ef4444' },
+  carrot: { id: 'carrot', name: 'Carota', seedCost: 35, growthTime: 15000, minYield: 3, maxYield: 5, minSeeds: 1, maxSeeds: 2, sellPrice: 40, icon: Carrot, color: '#f97316' },
+  eggplant: { id: 'eggplant', name: 'Melanzana', seedCost: 70, growthTime: 35000, minYield: 2, maxYield: 5, minSeeds: 0, maxSeeds: 2, sellPrice: 120, icon: Leaf, color: '#481570' }
 };
 
-// --- ALTRI TIPI E INTERFACCE ---
 type CellType = 'grass' | 'water' | 'plowed' | 'growing' | 'ready' | 'tree' | 'forest' | 'rock' | 'house' | 'mine' | 'animal_farm' | 'village' | 'city' | 'county' | 'lumber_mill' | 'stone_mason' | 'wild_animal' | 'port';
 type ActionType = 'plowing' | 'chopping' | 'mining' | 'building_house' | 'building_mine' | 'building_animal_farm' | 'planting_tree' | 'planting_forest' | 'building_village' | 'building_city' | 'building_county' | 'building_lumber_mill' | 'building_stone_mason' | 'building_port' | 'active_mine' | 'active_forest' | 'harvesting' | 'growing' | 'fishing' | 'hunting' | 'crafting_planks' | 'crafting_bricks' | 'spawn_rock' | 'start_active_forest' | string | null;
 
 interface Inventory {
-  coins: number;
-  wood: number;
-  stone: number;
-  wheat: number;
-  wheatSeeds: number;
-  tomato: number;
-  tomatoSeeds: number;
-  carrot: number;
-  carrotSeeds: number;
-  eggplant: number;
-  eggplantSeeds: number;
-  fish: number;
-  planks: number;
-  bricks: number;
-  wildMeat: number;
-  iron: number;
-  copper: number;
-  gold: number;
+  coins: number; wood: number; stone: number; wheat: number; wheatSeeds: number;
+  tomato: number; tomatoSeeds: number; carrot: number; carrotSeeds: number;
+  eggplant: number; eggplantSeeds: number; fish: number; planks: number; bricks: number;
+  wildMeat: number; iron: number; copper: number; gold: number;
 }
 
 interface UnlockedBuildings {
-  house: boolean;
-  animal_farm: boolean;
-  lumber_mill: boolean;
-  stone_mason: boolean;
-  mine: boolean;
-  port: boolean;
-  village: boolean;
-  city: boolean;
-  county: boolean;
-  tree: boolean;
-  forest: boolean;
-  rock: boolean;
+  house: boolean; animal_farm: boolean; lumber_mill: boolean; stone_mason: boolean;
+  mine: boolean; port: boolean; village: boolean; city: boolean; county: boolean;
+  tree: boolean; forest: boolean; rock: boolean;
 }
 
 interface Cell {
-  id: number;
-  type: CellType;
-  cropType?: CropId;
-  busyUntil: number | null;
-  busyTotalDuration: number | null;
-  pendingAction: ActionType;
-  farmersUsed?: number;
-  mineTicks?: number;
-  forestTicks?: number;
-  lastTickTime?: number;
-  animalCount?: number;
-  reproductionTargetTime?: number | null;
-  fishingTicks?: number;
-  wildAnimalCount?: number;
-  wildReproductionTargetTime?: number | null;
+  id: number; type: CellType; cropType?: CropId; busyUntil: number | null; busyTotalDuration: number | null;
+  pendingAction: ActionType; farmersUsed?: number; mineTicks?: number; forestTicks?: number;
+  lastTickTime?: number; animalCount?: number; reproductionTargetTime?: number | null;
+  fishingTicks?: number; wildAnimalCount?: number; wildReproductionTargetTime?: number | null;
 }
 
-// --- STATI INIZIALI ---
 const INITIAL_INVENTORY: Inventory = {
-  coins: 1000, wood: 0, stone: 0,
-  wheat: 0, wheatSeeds: 3,
-  tomato: 0, tomatoSeeds: 0,
-  carrot: 0, carrotSeeds: 0,
-  eggplant: 0, eggplantSeeds: 0,
-  fish: 0, planks: 0, bricks: 0, wildMeat: 0,
-  iron: 0, copper: 0, gold: 0
+  coins: 1000, wood: 0, stone: 0, wheat: 0, wheatSeeds: 3, tomato: 0, tomatoSeeds: 0,
+  carrot: 0, carrotSeeds: 0, eggplant: 0, eggplantSeeds: 0, fish: 0, planks: 0, bricks: 0,
+  wildMeat: 0, iron: 0, copper: 0, gold: 0
 };
 
 const INITIAL_UNLOCKED: UnlockedBuildings = {
-  house: false, animal_farm: false, lumber_mill: false,
-  stone_mason: false, mine: false, port: false,
-  village: false, city: false, county: false,
-  tree: false, forest: false, rock: false
+  house: false, animal_farm: false, lumber_mill: false, stone_mason: false, mine: false, port: false,
+  village: false, city: false, county: false, tree: false, forest: false, rock: false
 };
 
-// --- CONFIGURAZIONE GIOCO ---
 const GRID_SIZE = 8;
 const ACTION_TIMES = {
-  plowing: 3000,
-  planting: 2000,
-  harvesting: 2000,
-  chopping: 5000,
-  mining: 8000,
-  building_house: 15000,
-  building_mine: 10000,
-  planting_tree: 5000,
-  planting_forest: 10000,
-  building_animal_farm: 15000,
-  spawn_rock: 10000,
-  building_village: 20000,
-  building_city: 30000,
-  building_county: 40000,
-  building_lumber_mill: 12000,
-  building_stone_mason: 12000,
-  building_port: 15000,
-  crafting: 5000,
-  hunting: 5000
+  plowing: 3000, planting: 2000, harvesting: 2000, chopping: 5000, mining: 8000,
+  building_house: 15000, building_mine: 10000, planting_tree: 5000, planting_forest: 10000,
+  building_animal_farm: 15000, spawn_rock: 10000, building_village: 20000, building_city: 30000,
+  building_county: 40000, building_lumber_mill: 12000, building_stone_mason: 12000,
+  building_port: 15000, crafting: 5000, hunting: 5000
 };
 
 const COSTS = {
-  house: { wood: 3, stone: 6, farmers: 1 },
-  mine: { wood: 10, coins: 100, farmers: 3 },
-  tree: { coins: 50, farmers: 1 },
-  forest: { coins: 300, stone: 5, farmers: 2 },
+  house: { wood: 3, stone: 6, farmers: 1 }, mine: { wood: 10, coins: 100, farmers: 3 },
+  tree: { coins: 50, farmers: 1 }, forest: { coins: 300, stone: 5, farmers: 2 },
   animal_farm: { wheat: 5, wood: 5, stone: 5, coins: 100, farmers: 2 },
-  rock: { coins: 50, farmers: 1 },
-  village: { coins: 100, farmers: 2 },
-  city: { coins: 500, farmers: 4 },
-  county: { coins: 2000, farmers: 8 },
+  rock: { coins: 50, farmers: 1 }, village: { coins: 100, farmers: 2 },
+  city: { coins: 500, farmers: 4 }, county: { coins: 2000, farmers: 8 },
   lumber_mill: { wood: 15, stone: 5, coins: 150, farmers: 2 },
   stone_mason: { wood: 10, stone: 15, coins: 150, farmers: 2 },
   port: { wood: 20, stone: 10, coins: 200, farmers: 5 }
@@ -258,10 +168,8 @@ const AnimatedStickman = ({ action }: { action: ActionType }) => {
   );
 };
 
-// --- INIZIALIZZAZIONE GRIGLIA ---
 const generateInitialGrid = (): Cell[] => {
   const grid: Cell[] = Array(GRID_SIZE * GRID_SIZE).fill(null) as Cell[];
-
   let waterCells = new Set<number>();
   let currentCol = Math.floor(Math.random() * GRID_SIZE);
 
@@ -282,18 +190,14 @@ const generateInitialGrid = (): Cell[] => {
       waterCells.delete(i);
       continue;
     }
-
     let type: CellType = 'grass';
-    if (waterCells.has(i)) {
-      type = 'water';
-    } else {
+    if (waterCells.has(i)) type = 'water';
+    else {
       const rand = Math.random();
       if (rand < 0.15) type = 'tree';
       else if (rand < 0.25) type = 'rock';
     }
-
     grid[i] = { id: i, type, busyUntil: null, busyTotalDuration: null, pendingAction: null };
-
     if (type === 'grass') emptyGrassCells.push(i);
   }
 
@@ -305,7 +209,6 @@ const generateInitialGrid = (): Cell[] => {
     grid[cellId].wildAnimalCount = 1;
     emptyGrassCells.splice(randIndex, 1);
   }
-
   return grid;
 };
 
@@ -315,7 +218,6 @@ const App: React.FC = () => {
   const [hasSave, setHasSave] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // STATI PER IL GIORNO/NOTTE E AZIONI
   const [dayCount, setDayCount] = useState<number>(1);
   const [isNight, setIsNight] = useState<boolean>(false);
   const [actionsUsedToday, setActionsUsedToday] = useState<number>(0);
@@ -328,8 +230,6 @@ const App: React.FC = () => {
   const [showInventoryModal, setShowInventoryModal] = useState(false);
   const [showDiaryModal, setShowDiaryModal] = useState(false);
   const [showTutorialModal, setShowTutorialModal] = useState(false);
-
-  // STATI PER L'INTEGRAZIONE GEMINI (L'ANZIANO DEL VILLAGGIO)
   const [showElderModal, setShowElderModal] = useState(false);
   const [elderMessage, setElderMessage] = useState("");
   const [isElderThinking, setIsElderThinking] = useState(false);
@@ -340,20 +240,17 @@ const App: React.FC = () => {
   const [grid, setGrid] = useState<Cell[]>(generateInitialGrid());
   const [now, setNow] = useState<number>(Date.now());
   const [selectedCell, setSelectedCell] = useState<number | null>(null);
-
   const [respawningFarmers, setRespawningFarmers] = useState<number[]>([]);
 
   const gridRef = useRef(grid);
   const respawningRef = useRef(respawningFarmers);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Salva lo stato completo in un ref per il salvataggio automatico senza dipendenze continue
   const stateRef = useRef({ inventory, unlocked, grid, completedQuests, respawningFarmers, dayCount, actionsUsedToday });
   useEffect(() => {
     stateRef.current = { inventory, unlocked, grid, completedQuests, respawningFarmers, dayCount, actionsUsedToday };
   }, [inventory, unlocked, grid, completedQuests, respawningFarmers, dayCount, actionsUsedToday]);
 
-  // --- GESTIONE FIREBASE (AUTENTICAZIONE) ---
   useEffect(() => {
     if (!auth) return;
     const initAuth = async () => {
@@ -365,9 +262,6 @@ const App: React.FC = () => {
         }
       } catch (e: any) {
         console.error("Auth error", e);
-        if (e.code === 'auth/configuration-not-found' || e.code === 'auth/operation-not-allowed') {
-          console.warn("⚠️ Attenzione: Autenticazione Anonima non abilitata nella tua console Firebase! Si userà il salvataggio locale.");
-        }
       }
     };
     initAuth();
@@ -375,12 +269,9 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
-  // --- RICERCA SALVATAGGIO (Cloud + Locale fallback) ---
   useEffect(() => {
     const localSave = localStorage.getItem('fattoria_avanzata_save');
-    if (localSave) {
-      setHasSave(true);
-    }
+    if (localSave) setHasSave(true);
 
     if (!user || !db) return;
     const checkCloudSave = async () => {
@@ -397,7 +288,7 @@ const App: React.FC = () => {
     checkCloudSave();
   }, [user]);
 
-  // --- LOGICA CITTADINI E AZIONI DISPONIBILI ---
+  // --- CALCOLO COSTANTE CITTADINI E AZIONI ---
   const totalPorts = grid.filter(c => c.type === 'port').length;
   const baseFarmers =
       grid.filter(c => c.type === 'house').length * 1 +
@@ -408,28 +299,22 @@ const App: React.FC = () => {
   const totalFarmers = Math.max(0, baseFarmers - (totalPorts * COSTS.port.farmers) - respawningFarmers.length);
 
   const busyFarmers = grid.reduce((sum, c) => {
-    if (c.pendingAction && c.pendingAction !== 'growing' && c.pendingAction !== 'active_mine' && c.pendingAction !== 'fishing') {
+    if (c.pendingAction && c.pendingAction !== 'growing' && c.pendingAction !== 'active_mine' && c.pendingAction !== 'fishing' && c.pendingAction !== 'active_forest') {
       return sum + (c.farmersUsed || 1);
     }
     return sum;
   }, 0);
 
   const availableFarmers = totalFarmers - busyFarmers;
-
-  // AZIONI RIMANENTI OGGI
   const actionsLeft = Math.max(0, totalFarmers - actionsUsedToday);
   const totalAnimals = grid.reduce((sum, cell) => sum + (cell.animalCount || 0), 0);
   const busyShips = grid.filter(c => c.pendingAction === 'fishing').length;
   const availableShips = totalPorts - busyShips;
 
-  // Gestione del Game Over
   useEffect(() => {
-    if (gameState === 'playing' && totalFarmers <= 0) {
-      setGameState('gameover');
-    }
+    if (gameState === 'playing' && totalFarmers <= 0) setGameState('gameover');
   }, [totalFarmers, gameState]);
 
-  // --- INTEGRAZIONE LLM GEMINI: L'ANZIANO DEL VILLAGGIO ---
   const askVillageElder = async () => {
     setElderMessage("");
     setIsElderThinking(true);
@@ -445,7 +330,6 @@ const App: React.FC = () => {
         "Se il giocatore ha poche risorse di base (legna, pietra), suggerisci di raccoglierle. Se ha molte risorse, suggerisci di espandere costruendo case, villaggi, o esplorando il mare con un porto. " +
         "Sii breve e conciso, massimo 2 o 3 frasi. Usa 1 o 2 emoji adatte per rendere il testo più carino.";
 
-    // Raccogli i dati correnti per fornire contesto all'LLM
     const activeQuestIndex = ALL_QUESTS.findIndex(q => !completedQuests.includes(q.id));
     const currentQuestStr = activeQuestIndex !== -1 ? ALL_QUESTS[activeQuestIndex].title : "Dominio totale";
 
@@ -490,28 +374,19 @@ const App: React.FC = () => {
     }
   };
 
-
-  // --- SALVATAGGIO (Cloud + Locale Fallback) ---
   const handleSaveGame = async (isAuto = false) => {
     if (!isAuto) setIsSaving(true);
-
     const saveData = {
-      inventory: stateRef.current.inventory,
-      unlocked: stateRef.current.unlocked,
-      grid: JSON.stringify(stateRef.current.grid),
-      completedQuests: stateRef.current.completedQuests,
+      inventory: stateRef.current.inventory, unlocked: stateRef.current.unlocked,
+      grid: JSON.stringify(stateRef.current.grid), completedQuests: stateRef.current.completedQuests,
       respawningFarmers: JSON.stringify(stateRef.current.respawningFarmers),
-      dayCount: stateRef.current.dayCount,
-      actionsUsedToday: stateRef.current.actionsUsedToday
+      dayCount: stateRef.current.dayCount, actionsUsedToday: stateRef.current.actionsUsedToday
     };
 
-    // Salva sempre in locale come backup
     try {
       localStorage.setItem('fattoria_avanzata_save', JSON.stringify(saveData));
       setHasSave(true);
-    } catch(e) {
-      console.error("Errore salvataggio locale", e);
-    }
+    } catch(e) {}
 
     if (user && db) {
       try {
@@ -520,7 +395,6 @@ const App: React.FC = () => {
         const msg = isAuto ? 'Autosalvataggio cloud completato' : 'Partita salvata nel Cloud!';
         setToasts(prev => [...prev, { id: 'save-' + Date.now(), title: msg, type: 'success' }]);
       } catch (e) {
-        console.error("Save Game Error", e);
         if (!isAuto) setToasts(prev => [...prev, { id: 'err-save', title: 'Salvataggio Cloud fallito (salvato in locale)', type: 'danger' }]);
       }
     } else {
@@ -534,8 +408,6 @@ const App: React.FC = () => {
 
   const handleLoadGame = async () => {
     let loadedData: any = null;
-
-    // Prova prima dal cloud se utente connesso
     if (user && db) {
       try {
         const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'savegame', 'data');
@@ -556,17 +428,12 @@ const App: React.FC = () => {
         setToasts(prev => [...prev, { id: 'load-local', title: 'Caricato salvataggio locale', type: 'success' }]);
       }
     }
-
     if (loadedData) {
-      setInventory(loadedData.inventory);
-      setUnlocked(loadedData.unlocked);
-      setGrid(JSON.parse(loadedData.grid));
-      setCompletedQuests(loadedData.completedQuests || []);
+      setInventory(loadedData.inventory); setUnlocked(loadedData.unlocked);
+      setGrid(JSON.parse(loadedData.grid)); setCompletedQuests(loadedData.completedQuests || []);
       setRespawningFarmers(JSON.parse(loadedData.respawningFarmers || '[]'));
-      setDayCount(loadedData.dayCount || 1);
-      setActionsUsedToday(loadedData.actionsUsedToday || 0);
-      setIsNight(false);
-      setGameState('playing');
+      setDayCount(loadedData.dayCount || 1); setActionsUsedToday(loadedData.actionsUsedToday || 0);
+      setIsNight(false); setGameState('playing');
       setTimeout(() => setToasts(prev => prev.filter(t => t.id !== 'load-local')), 3000);
     } else {
       setToasts(prev => [...prev, { id: 'err-load', title: 'Nessun salvataggio trovato', type: 'danger' }]);
@@ -576,23 +443,16 @@ const App: React.FC = () => {
 
   const handleExportSave = () => {
     const saveData = {
-      inventory: stateRef.current.inventory,
-      unlocked: stateRef.current.unlocked,
-      grid: JSON.stringify(stateRef.current.grid),
-      completedQuests: stateRef.current.completedQuests,
+      inventory: stateRef.current.inventory, unlocked: stateRef.current.unlocked,
+      grid: JSON.stringify(stateRef.current.grid), completedQuests: stateRef.current.completedQuests,
       respawningFarmers: JSON.stringify(stateRef.current.respawningFarmers),
-      dayCount: stateRef.current.dayCount,
-      actionsUsedToday: stateRef.current.actionsUsedToday
+      dayCount: stateRef.current.dayCount, actionsUsedToday: stateRef.current.actionsUsedToday
     };
     const blob = new Blob([JSON.stringify(saveData, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
+    const a = document.createElement('a'); a.href = url;
     a.download = `fattoria_save_${new Date().toISOString().slice(0,10)}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
     setToasts(prev => [...prev, { id: 'export-' + Date.now(), title: 'File di salvataggio esportato!', type: 'success' }]);
     setTimeout(() => setToasts(prev => prev.filter(t => !t.id.startsWith('export-'))), 3000);
   };
@@ -600,80 +460,67 @@ const App: React.FC = () => {
   const handleImportSave = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
         const content = e.target?.result as string;
         const loadedData = JSON.parse(content);
-
         if (!loadedData.inventory || !loadedData.grid) throw new Error("File JSON non valido");
-
-        setInventory(loadedData.inventory);
-        setUnlocked(loadedData.unlocked);
-        setGrid(JSON.parse(loadedData.grid));
-        setCompletedQuests(loadedData.completedQuests || []);
+        setInventory(loadedData.inventory); setUnlocked(loadedData.unlocked);
+        setGrid(JSON.parse(loadedData.grid)); setCompletedQuests(loadedData.completedQuests || []);
         setRespawningFarmers(JSON.parse(loadedData.respawningFarmers || '[]'));
-        setDayCount(loadedData.dayCount || 1);
-        setActionsUsedToday(loadedData.actionsUsedToday || 0);
+        setDayCount(loadedData.dayCount || 1); setActionsUsedToday(loadedData.actionsUsedToday || 0);
         setIsNight(false);
-
-        // Aggiorna anche il salvataggio locale per comodità
         localStorage.setItem('fattoria_avanzata_save', JSON.stringify(loadedData));
-        setHasSave(true);
-
-        // Se eravamo nel menu, avviamo il gioco
-        setGameState('playing');
-
+        setHasSave(true); setGameState('playing');
         setToasts(prev => [...prev, { id: 'load-file', title: 'Partita caricata dal file!', type: 'success' }]);
         setTimeout(() => setToasts(prev => prev.filter(t => t.id !== 'load-file')), 3000);
-      } catch (err) {
-        console.error(err);
-        alert("Errore nell'importazione del file di salvataggio. Assicurati che sia un file JSON valido generato dal gioco.");
-      }
+      } catch (err) { alert("Errore nell'importazione. Assicurati che sia un file JSON valido generato dal gioco."); }
     };
     reader.readAsText(file);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // Autosalvataggio ogni 60 secondi
   useEffect(() => {
     if (gameState !== 'playing') return;
-    const autoSaveInterval = setInterval(() => {
-      handleSaveGame(true);
-    }, 60000);
+    const autoSaveInterval = setInterval(() => { handleSaveGame(true); }, 60000);
     return () => clearInterval(autoSaveInterval);
   }, [gameState, user]);
 
-  // --- TRANSIZIONE GIORNO/NOTTE ---
+  // --- TRANSIZIONE GIORNO/NOTTE E FIX BUG CONTADINI BLOCCATI ---
   const endDay = () => {
     setIsNight(true);
     setSelectedCell(null);
+
+    // FIX: Avanza istantaneamente il tempo per tutti i lavori fisici pendenti quando cala la notte!
+    // Questo evita che i contadini restino "congelati" nell'azione il giorno successivo.
+    setGrid(prev => prev.map(c => {
+      if (c.busyUntil && c.pendingAction !== 'fishing' && c.pendingAction !== 'active_forest' && c.pendingAction !== 'active_mine' && c.pendingAction !== 'growing') {
+        return { ...c, busyUntil: Date.now() }; // Imposta il completamento ad ora (fast-forward)
+      }
+      return c;
+    }));
+
     setTimeout(() => {
       setIsNight(false);
       setDayCount(d => d + 1);
       setActionsUsedToday(0);
-    }, 5000); // La notte dura 5 secondi
+    }, 5000);
   };
 
-  // Auto-Notte quando finiscono le azioni
+  // Auto-Notte: Ora aspetta che non ci siano cittadini impegnati in lavori manuali
   useEffect(() => {
-    if (actionsLeft <= 0 && !isNight && totalFarmers > 0 && gameState === 'playing') {
-      const t = setTimeout(() => {
-        endDay();
-      }, 1500); // Piccola pausa prima che cali la notte
+    if (actionsLeft <= 0 && busyFarmers === 0 && !isNight && totalFarmers > 0 && gameState === 'playing') {
+      const t = setTimeout(() => { endDay(); }, 1500);
       return () => clearTimeout(t);
     }
-  }, [actionsLeft, isNight, totalFarmers, gameState]);
+  }, [actionsLeft, busyFarmers, isNight, totalFarmers, gameState]);
 
-  // Logica Eventi Casuali Bilanciati
   useEffect(() => {
     if (gameState !== 'playing') return;
-
     const eventInterval = setInterval(() => {
       const currentGrid = gridRef.current;
       const currentRespawning = respawningRef.current;
-
       const currentPorts = currentGrid.filter(c => c.type === 'port').length;
       const currentBaseFarmers =
           currentGrid.filter(c => c.type === 'house').length * 1 +
@@ -682,39 +529,29 @@ const App: React.FC = () => {
           currentGrid.filter(c => c.type === 'county').length * 100;
 
       const currentTotalFarmers = Math.max(0, currentBaseFarmers - (currentPorts * COSTS.port.farmers) - currentRespawning.length);
-
       if (currentTotalFarmers <= 0) return;
 
-      let eventTriggered = false;
-      let eventMessage = "";
-
+      let eventTriggered = false; let eventMessage = "";
       const diseaseProb = Math.min(0.90, 0.05 + (currentTotalFarmers - 1) * 0.0447);
       const hasWildAnimals = currentGrid.some(c => c.type === 'wild_animal');
       const wolvesProb = !hasWildAnimals ? 0.40 : 0;
       const banditsProb = currentPorts > 0 ? 0.30 : 0;
 
       if (Math.random() < diseaseProb) {
-        eventTriggered = true;
-        eventMessage = "Un'improvvisa malattia ha colpito un cittadino!";
+        eventTriggered = true; eventMessage = "Un'improvvisa malattia ha colpito un cittadino!";
       } else if (wolvesProb > 0 && Math.random() < wolvesProb) {
-        eventTriggered = true;
-        eventMessage = "Senza più prede nella foresta, i lupi hanno attaccato la fattoria!";
+        eventTriggered = true; eventMessage = "Senza più prede nella foresta, i lupi hanno attaccato la fattoria!";
       } else if (banditsProb > 0 && Math.random() < banditsProb) {
-        eventTriggered = true;
-        eventMessage = "Dei banditi giunti via mare hanno assalito l'insediamento!";
+        eventTriggered = true; eventMessage = "Dei banditi giunti via mare hanno assalito l'insediamento!";
       }
 
       if (eventTriggered) {
         setRespawningFarmers(prev => [...prev, Date.now() + 40000]);
-
         const eventId = 'evt-' + Date.now();
         setToasts(prev => [...prev, { id: eventId, title: eventMessage, type: 'danger' }]);
-        setTimeout(() => {
-          setToasts(prev => prev.filter(t => t.id !== eventId));
-        }, 5000);
+        setTimeout(() => { setToasts(prev => prev.filter(t => t.id !== eventId)); }, 5000);
       }
     }, 45000);
-
     return () => clearInterval(eventInterval);
   }, [gameState]);
 
@@ -809,8 +646,8 @@ const App: React.FC = () => {
               const isIdleTree = (idx: number) => newGrid[idx].type === 'tree' && !newGrid[idx].busyUntil && newGrid[idx].pendingAction === null;
 
               if (isIdleTree(tr) && isIdleTree(bl) && isIdleTree(br)) {
-                // Ora fonde in una foresta (inattiva), non parte automaticamente la raccolta
-                newGrid[tl] = { ...newGrid[tl], type: 'forest' };
+                // Fonde in foresta INATTIVA, richiederà l'azione del giocatore al mattino
+                newGrid[tl] = { ...newGrid[tl], type: 'forest', pendingAction: null, busyUntil: null, busyTotalDuration: null };
                 newGrid[tr] = { ...newGrid[tr], type: 'grass' };
                 newGrid[bl] = { ...newGrid[bl], type: 'grass' };
                 newGrid[br] = { ...newGrid[br], type: 'grass' };
@@ -824,6 +661,225 @@ const App: React.FC = () => {
       });
     }
   }, [isNight, gameState]);
+
+  // --- EVENTI NOTTURNI E MAIN GAME LOOP ---
+  useEffect(() => {
+    if (gameState !== 'playing') return;
+
+    const interval = setInterval(() => {
+      const currentTime = Date.now();
+      setNow(currentTime);
+
+      setGrid(prevGrid => {
+        let newGrid = [...prevGrid];
+        let gridChanged = false;
+        let newRewards: Partial<Inventory> = {};
+        let newlyDeadFarmers = 0;
+
+        const addReward = (key: keyof Inventory, amount: number) => {
+          newRewards[key] = (newRewards[key] || 0) + amount;
+        };
+
+        for (let i = 0; i < newGrid.length; i++) {
+          let updatedCell = { ...newGrid[i] };
+          let cellModified = false;
+
+          if (updatedCell.type === 'mine' && updatedCell.pendingAction === 'active_mine') {
+            const timeSinceLastTick = currentTime - (updatedCell.lastTickTime || currentTime);
+            if (timeSinceLastTick >= 5000) {
+              cellModified = true;
+              const dropRoll = Math.random() * 100;
+              if (dropRoll < 7) addReward('gold', 1);
+              else if (dropRoll < 14) addReward('copper', 1);
+              else if (dropRoll < 21) addReward('iron', 1);
+              else addReward('stone', 1);
+
+              const newTicks = (updatedCell.mineTicks || 0) + 1;
+              if (newTicks >= 12) {
+                updatedCell = { ...updatedCell, type: 'rock', pendingAction: null, lastTickTime: undefined, mineTicks: undefined, farmersUsed: undefined };
+              } else {
+                updatedCell = { ...updatedCell, lastTickTime: currentTime, mineTicks: newTicks };
+              }
+            }
+          }
+
+          if (updatedCell.type === 'forest' && updatedCell.pendingAction === 'active_forest') {
+            const timeSinceLastTick = currentTime - (updatedCell.lastTickTime || currentTime);
+            if (timeSinceLastTick >= 15000) {
+              cellModified = true;
+              addReward('wood', 2);
+              const newTicks = (updatedCell.forestTicks || 0) + 1;
+              if (newTicks >= 4) {
+                updatedCell = { ...updatedCell, type: 'grass', pendingAction: null, lastTickTime: undefined, forestTicks: undefined, farmersUsed: undefined };
+              } else {
+                updatedCell = { ...updatedCell, lastTickTime: currentTime, forestTicks: newTicks };
+              }
+            }
+          }
+
+          if (updatedCell.type === 'animal_farm') {
+            const count = updatedCell.animalCount || 0;
+            if (count >= 2 && count < 5) {
+              if (!updatedCell.reproductionTargetTime) {
+                updatedCell = { ...updatedCell, reproductionTargetTime: currentTime + 20000 };
+                cellModified = true;
+              } else if (currentTime >= updatedCell.reproductionTargetTime) {
+                updatedCell = { ...updatedCell, animalCount: count + 1, reproductionTargetTime: (count + 1) < 5 ? currentTime + 20000 : null };
+                cellModified = true;
+              }
+            } else if (updatedCell.reproductionTargetTime) {
+              updatedCell = { ...updatedCell, reproductionTargetTime: null };
+              cellModified = true;
+            }
+          }
+
+          if (updatedCell.type === 'wild_animal') {
+            const count = updatedCell.wildAnimalCount || 1;
+            if (count >= 2 && count < 10) {
+              if (!updatedCell.wildReproductionTargetTime) {
+                updatedCell = { ...updatedCell, wildReproductionTargetTime: currentTime + 50000 };
+                cellModified = true;
+              } else if (currentTime >= updatedCell.wildReproductionTargetTime) {
+                updatedCell = { ...updatedCell, wildAnimalCount: count + 1, wildReproductionTargetTime: (count + 1) < 10 ? currentTime + 50000 : null };
+                cellModified = true;
+              }
+            } else if (updatedCell.wildReproductionTargetTime && count < 2) {
+              updatedCell = { ...updatedCell, wildReproductionTargetTime: null };
+              cellModified = true;
+            } else if (count >= 10 && updatedCell.wildReproductionTargetTime) {
+              updatedCell = { ...updatedCell, wildReproductionTargetTime: null };
+              cellModified = true;
+            }
+          }
+
+          if (updatedCell.type === 'water' && updatedCell.pendingAction === 'fishing') {
+            const timeSinceLastTick = currentTime - (updatedCell.lastTickTime || currentTime);
+            if (timeSinceLastTick >= 10000) {
+              cellModified = true;
+              addReward('fish', 3);
+              const newTicks = (updatedCell.fishingTicks || 0) + 1;
+              if (newTicks >= 3) {
+                updatedCell = { ...updatedCell, pendingAction: null, lastTickTime: undefined, fishingTicks: undefined };
+              } else {
+                updatedCell = { ...updatedCell, lastTickTime: currentTime, fishingTicks: newTicks };
+              }
+            }
+          }
+
+          if (updatedCell.busyUntil && currentTime >= updatedCell.busyUntil && updatedCell.pendingAction !== 'fishing') {
+            cellModified = true;
+            let newType = updatedCell.type;
+            let newPendingAction: ActionType = null;
+
+            if (updatedCell.pendingAction === 'plowing') newType = 'plowed';
+            else if (updatedCell.pendingAction === 'planting_tree') newType = 'tree';
+            else if (updatedCell.pendingAction === 'planting_forest') newType = 'forest';
+            else if (updatedCell.pendingAction === 'spawn_rock') newType = 'rock';
+            else if (updatedCell.pendingAction === 'building_village') newType = 'village';
+            else if (updatedCell.pendingAction === 'building_city') newType = 'city';
+            else if (updatedCell.pendingAction === 'building_county') newType = 'county';
+            else if (updatedCell.pendingAction === 'building_lumber_mill') newType = 'lumber_mill';
+            else if (updatedCell.pendingAction === 'building_stone_mason') newType = 'stone_mason';
+            else if (updatedCell.pendingAction === 'building_port') newType = 'port';
+            else if (updatedCell.pendingAction === 'building_mine') {
+              newType = 'mine'; newPendingAction = 'active_mine'; updatedCell.lastTickTime = currentTime; updatedCell.mineTicks = 0;
+            }
+            else if (updatedCell.pendingAction === 'building_animal_farm') {
+              newType = 'animal_farm'; updatedCell.animalCount = 2;
+            }
+            else if (updatedCell.pendingAction?.startsWith('planting_') && updatedCell.pendingAction !== 'planting_forest' && updatedCell.pendingAction !== 'planting_tree') {
+              newType = 'growing';
+              const cropType = updatedCell.cropType!;
+              updatedCell.busyUntil = currentTime + CROPS[cropType].growthTime;
+              updatedCell.busyTotalDuration = CROPS[cropType].growthTime;
+              newPendingAction = 'growing';
+            }
+            else if (updatedCell.pendingAction === 'growing') newType = 'ready';
+            else if (updatedCell.pendingAction === 'harvesting') {
+              newType = 'grass';
+              const crop = CROPS[updatedCell.cropType!];
+              addReward(crop.id, crop.minYield + Math.floor(Math.random() * (crop.maxYield - crop.minYield + 1)));
+              addReward(`${crop.id}Seeds` as keyof Inventory, crop.minSeeds + Math.floor(Math.random() * (crop.maxSeeds - crop.minSeeds + 1)));
+            }
+            else if (updatedCell.pendingAction === 'chopping') { newType = 'grass'; addReward('wood', 5 + Math.floor(Math.random() * 3)); }
+            else if (updatedCell.pendingAction === 'mining') {
+              newType = 'grass';
+              const dropRoll = Math.random() * 100;
+              if (dropRoll < 7) addReward('gold', 2);
+              else if (dropRoll < 20) addReward('copper', 3);
+              else if (dropRoll < 38) addReward('iron', 3);
+              else addReward('stone', 3 + Math.floor(Math.random() * 3));
+            }
+            else if (updatedCell.pendingAction === 'crafting_planks') { addReward('planks', 1); }
+            else if (updatedCell.pendingAction === 'crafting_bricks') { addReward('bricks', 1); }
+            else if (updatedCell.pendingAction === 'building_house') newType = 'house';
+            else if (updatedCell.pendingAction === 'hunting') {
+              newType = 'wild_animal';
+              let wildCount = updatedCell.wildAnimalCount || 1;
+              if (Math.random() * 100 < 15) newlyDeadFarmers += 1;
+              else if (Math.random() * 100 < 35) { addReward('wildMeat', 1); wildCount -= 1; }
+
+              if (wildCount <= 0) { newType = 'grass'; updatedCell.wildAnimalCount = undefined; updatedCell.wildReproductionTargetTime = undefined; }
+              else { updatedCell.wildAnimalCount = wildCount; }
+            }
+
+            updatedCell = {
+              ...updatedCell, type: newType, pendingAction: newPendingAction,
+              cropType: newType === 'grass' ? undefined : updatedCell.cropType,
+              farmersUsed: undefined
+            };
+
+            if (newPendingAction !== 'growing') {
+              updatedCell.busyUntil = null;
+              updatedCell.busyTotalDuration = null;
+            }
+          }
+
+          if (cellModified) {
+            newGrid[i] = updatedCell;
+            gridChanged = true;
+          }
+        }
+
+        if (gridChanged) {
+          if (Object.keys(newRewards).length > 0) {
+            setTimeout(() => {
+              setInventory(prev => {
+                const next = { ...prev };
+                (Object.keys(newRewards) as Array<keyof Inventory>).forEach(k => {
+                  next[k] = (next[k] as number) + (newRewards[k] as number);
+                });
+                return next;
+              });
+            }, 0);
+          }
+        }
+
+        if (newlyDeadFarmers > 0) {
+          setTimeout(() => {
+            setRespawningFarmers(prev => {
+              const next = [...prev];
+              for (let i = 0; i < newlyDeadFarmers; i++) next.push(currentTime + 40000);
+              return next;
+            });
+          }, 0);
+        }
+
+        return gridChanged ? newGrid : prevGrid;
+      });
+
+      let respawnChanged = false;
+      let nextRespawning = [...respawningRef.current];
+      const filteredRespawning = nextRespawning.filter(time => {
+        if (currentTime >= time) { respawnChanged = true; return false; }
+        return true;
+      });
+      if (respawnChanged) setRespawningFarmers(filteredRespawning);
+
+    }, 100);
+
+    return () => clearInterval(interval);
+  }, [gameState]);
 
   const startNewGame = () => {
     setInventory(INITIAL_INVENTORY);
@@ -844,12 +900,8 @@ const App: React.FC = () => {
     setUnlocked(prev => {
       let changed = false;
       const next = { ...prev };
-
       const checkUnlock = (key: keyof UnlockedBuildings, condition: boolean) => {
-        if (!next[key] && condition) {
-          next[key] = true;
-          changed = true;
-        }
+        if (!next[key] && condition) { next[key] = true; changed = true; }
       };
 
       checkUnlock('tree', inventory.coins >= COSTS.tree.coins && totalFarmers >= COSTS.tree.farmers);
@@ -913,334 +965,63 @@ const App: React.FC = () => {
     return null;
   };
 
-  // --- SISTEMA DI MISSIONI (DIARIO) ---
   const ALL_QUESTS = useMemo(() => [
     {
-      id: 'q1',
-      icon: Axe,
-      title: 'Sopravvivenza Base',
+      id: 'q1', icon: Axe, title: 'Sopravvivenza Base',
       desc: "Clicca sugli alberi e sulle rocce verdi della mappa per raccogliere i materiali primari. Se non hai alberi usa 50 Monete per piantarli nell'erba libera.",
-      goal: 'Ottieni 10 Legna e 10 Pietra.',
-      isDone: () => inventory.wood >= 10 && inventory.stone >= 10
+      goal: 'Ottieni 10 Legna e 10 Pietra.', isDone: () => inventory.wood >= 10 && inventory.stone >= 10
     },
     {
-      id: 'q2',
-      icon: Home,
-      title: 'Un Tetto Sopra la Testa',
+      id: 'q2', icon: Home, title: 'Un Tetto Sopra la Testa',
       desc: "Clicca su un prato verde e costruisci una Casa. Espanderà la tua popolazione lavorativa.",
-      goal: 'Costruisci la tua prima nuova Casa.',
-      isDone: () => grid.filter(c => c.type === 'house').length > 1 || grid.some(c => ['village','city','county'].includes(c.type))
+      goal: 'Costruisci la tua prima nuova Casa.', isDone: () => grid.filter(c => c.type === 'house').length > 1 || grid.some(c => ['village','city','county'].includes(c.type))
     },
     {
-      id: 'q3',
-      icon: Wheat,
-      title: 'I Frutti della Terra',
+      id: 'q3', icon: Wheat, title: 'I Frutti della Terra',
       desc: "Ara un terreno, pianta dei semi di Grano (comprali al Mercato se serve) e attendi la crescita per raccoglierli.",
-      goal: 'Ottieni del Grano nell\'inventario.',
-      isDone: () => inventory.wheat > 0
+      goal: 'Ottieni del Grano nell\'inventario.', isDone: () => inventory.wheat > 0
     },
     {
-      id: 'q4',
-      icon: Factory,
-      title: 'L\'Età dell\'Industria',
+      id: 'q4', icon: Factory, title: 'L\'Età dell\'Industria',
       desc: "Costruisci una Segheria su un terreno e usala per trasformare la legna in materiale da costruzione.",
-      goal: 'Costruisci una Segheria e crea la tua prima Asse.',
-      isDone: () => inventory.planks > 0
+      goal: 'Costruisci una Segheria e crea la tua prima Asse.', isDone: () => inventory.planks > 0
     },
     {
-      id: 'q5',
-      icon: Anchor,
-      title: 'Verso l\'Ignoto',
+      id: 'q5', icon: Anchor, title: 'Verso l\'Ignoto',
       desc: "La nebbia nasconde tesori. Costruisci un Porto sull'erba vicino all'acqua. Attenzione: richiede 5 cittadini permanenti come equipaggio!",
-      goal: 'Costruisci un Porto per diradare la nebbia.',
-      isDone: () => totalPorts > 0
+      goal: 'Costruisci un Porto per diradare la nebbia.', isDone: () => totalPorts > 0
     },
     {
-      id: 'q6',
-      icon: Hammer,
-      title: 'Profondità Oscure',
+      id: 'q6', icon: Hammer, title: 'Profondità Oscure',
       desc: "Trasforma una Roccia in una Miniera permanente. Estrarrà automaticamente pietre e metalli preziosi.",
-      goal: 'Costruisci una Miniera.',
-      isDone: () => grid.some(c => c.type === 'mine')
+      goal: 'Costruisci una Miniera.', isDone: () => grid.some(c => c.type === 'mine')
     },
     {
-      id: 'q7',
-      icon: Tent,
-      title: 'Urbanistica',
+      id: 'q7', icon: Tent, title: 'Urbanistica',
       desc: "Metti 4 Case vicine a formare un quadrato 2x2. Clicca su una di esse per unirle in un Villaggio.",
-      goal: 'Fonda un Villaggio.',
-      isDone: () => grid.some(c => ['village','city','county'].includes(c.type))
+      goal: 'Fonda un Villaggio.', isDone: () => grid.some(c => ['village','city','county'].includes(c.type))
     },
     {
-      id: 'q8',
-      icon: Landmark,
-      title: 'L\'Impero',
+      id: 'q8', icon: Landmark, title: 'L\'Impero',
       desc: "Continua a fondere i tuoi insediamenti: 4 Villaggi creano una Città. 4 Città creano l'insediamento definitivo.",
-      goal: 'Fonda la gloriosa Contea.',
-      isDone: () => grid.some(c => c.type === 'county')
+      goal: 'Fonda la gloriosa Contea.', isDone: () => grid.some(c => c.type === 'county')
     }
   ], [inventory, grid, totalPorts]);
 
   useEffect(() => {
     if (gameState !== 'playing') return;
-
     const activeQuestIndex = ALL_QUESTS.findIndex(q => !completedQuests.includes(q.id));
-
     if (activeQuestIndex !== -1) {
       const activeQuest = ALL_QUESTS[activeQuestIndex];
-
       if (activeQuest.isDone()) {
         setCompletedQuests(prev => [...prev, activeQuest.id]);
         setUnreadQuests(prev => prev + 1);
-
         const toastId = 'q-' + activeQuest.id;
         setToasts(prev => [...prev, { id: toastId, title: activeQuest.title, type: 'success' }]);
-
-        setTimeout(() => {
-          setToasts(prev => prev.filter(t => t.id !== toastId));
-        }, 4000);
+        setTimeout(() => { setToasts(prev => prev.filter(t => t.id !== toastId)); }, 4000);
       }
     }
   }, [ALL_QUESTS, completedQuests, gameState]);
-
-  // --- GAME LOOP (Esecuzione Continua Azioni in Sospeso) ---
-  useEffect(() => {
-    if (gameState !== 'playing') return;
-
-    const interval = setInterval(() => {
-      const currentTime = Date.now();
-      setNow(currentTime);
-
-      let gridChanged = false;
-      let newRewards: Partial<Inventory> = {};
-      let newlyDeadFarmers = 0;
-
-      const addReward = (key: keyof Inventory, amount: number) => {
-        newRewards[key] = (newRewards[key] || 0) + amount;
-      };
-
-      const newGrid = gridRef.current.map(cell => {
-        let updatedCell = cell;
-        let cellModified = false;
-
-        // 1. GESTIONE MINIERA PASSIVA
-        if (updatedCell.type === 'mine' && updatedCell.pendingAction === 'active_mine') {
-          const timeSinceLastTick = currentTime - (updatedCell.lastTickTime || currentTime);
-          if (timeSinceLastTick >= 5000) {
-            cellModified = true;
-            const dropRoll = Math.random() * 100;
-            if (dropRoll < 7) addReward('gold', 1);
-            else if (dropRoll < 14) addReward('copper', 1);
-            else if (dropRoll < 21) addReward('iron', 1);
-            else                     addReward('stone', 1);
-
-            const newTicks = (updatedCell.mineTicks || 0) + 1;
-            if (newTicks >= 12) {
-              updatedCell = { ...updatedCell, type: 'rock', pendingAction: null, lastTickTime: undefined, mineTicks: undefined, farmersUsed: undefined };
-            } else {
-              updatedCell = { ...updatedCell, lastTickTime: currentTime, mineTicks: newTicks };
-            }
-          }
-        }
-
-        // 1.5 GESTIONE BOSCO PASSIVO
-        if (updatedCell.type === 'forest' && updatedCell.pendingAction === 'active_forest') {
-          const timeSinceLastTick = currentTime - (updatedCell.lastTickTime || currentTime);
-          if (timeSinceLastTick >= 15000) {
-            cellModified = true;
-            addReward('wood', 2);
-
-            const newTicks = (updatedCell.forestTicks || 0) + 1;
-            if (newTicks >= 4) {
-              updatedCell = { ...updatedCell, type: 'grass', pendingAction: null, lastTickTime: undefined, forestTicks: undefined, farmersUsed: undefined };
-            } else {
-              updatedCell = { ...updatedCell, lastTickTime: currentTime, forestTicks: newTicks };
-            }
-          }
-        }
-
-        // 2. GESTIONE FATTORIA ANIMALI
-        if (updatedCell.type === 'animal_farm') {
-          const count = updatedCell.animalCount || 0;
-          if (count >= 2 && count < 5) {
-            if (!updatedCell.reproductionTargetTime) {
-              updatedCell = { ...updatedCell, reproductionTargetTime: currentTime + 20000 };
-              cellModified = true;
-            } else if (currentTime >= updatedCell.reproductionTargetTime) {
-              updatedCell = { ...updatedCell, animalCount: count + 1, reproductionTargetTime: (count + 1) < 5 ? currentTime + 20000 : null };
-              cellModified = true;
-            }
-          } else if (updatedCell.reproductionTargetTime) {
-            updatedCell = { ...updatedCell, reproductionTargetTime: null };
-            cellModified = true;
-          }
-        }
-
-        // 3. GESTIONE ANIMALI SELVATICI (RIPRODUZIONE)
-        if (updatedCell.type === 'wild_animal') {
-          const count = updatedCell.wildAnimalCount || 1;
-          if (count >= 2 && count < 10) {
-            if (!updatedCell.wildReproductionTargetTime) {
-              updatedCell = { ...updatedCell, wildReproductionTargetTime: currentTime + 50000 };
-              cellModified = true;
-            } else if (currentTime >= updatedCell.wildReproductionTargetTime) {
-              updatedCell = { ...updatedCell, wildAnimalCount: count + 1, wildReproductionTargetTime: (count + 1) < 10 ? currentTime + 50000 : null };
-              cellModified = true;
-            }
-          } else if (updatedCell.wildReproductionTargetTime && count < 2) {
-            updatedCell = { ...updatedCell, wildReproductionTargetTime: null };
-            cellModified = true;
-          } else if (count >= 10 && updatedCell.wildReproductionTargetTime) {
-            updatedCell = { ...updatedCell, wildReproductionTargetTime: null };
-            cellModified = true;
-          }
-        }
-
-        // 4. GESTIONE PESCA
-        if (updatedCell.type === 'water' && updatedCell.pendingAction === 'fishing') {
-          const timeSinceLastTick = currentTime - (updatedCell.lastTickTime || currentTime);
-          if (timeSinceLastTick >= 10000) {
-            cellModified = true;
-            addReward('fish', 3);
-            const newTicks = (updatedCell.fishingTicks || 0) + 1;
-            if (newTicks >= 3) {
-              updatedCell = { ...updatedCell, pendingAction: null, lastTickTime: undefined, fishingTicks: undefined };
-            } else {
-              updatedCell = { ...updatedCell, lastTickTime: currentTime, fishingTicks: newTicks };
-            }
-          }
-        }
-
-        // 5. GESTIONE AZIONI COMPLETATE
-        if (updatedCell.busyUntil && currentTime >= updatedCell.busyUntil && updatedCell.pendingAction !== 'fishing') {
-          cellModified = true;
-          let newType = updatedCell.type;
-          let newPendingAction: ActionType = null;
-          let busyUntil = null;
-          let busyTotalDuration = null;
-          let lastTickTime = undefined;
-          let mineTicks = undefined;
-          let forestTicks = undefined;
-          let animalCount = updatedCell.animalCount;
-          let wildAnimalCount = updatedCell.wildAnimalCount;
-
-          if (updatedCell.pendingAction === 'plowing') newType = 'plowed';
-          else if (updatedCell.pendingAction === 'planting_tree') newType = 'tree';
-          else if (updatedCell.pendingAction === 'planting_forest') {
-            newType = 'forest';
-          }
-          else if (updatedCell.pendingAction === 'spawn_rock') newType = 'rock';
-          else if (updatedCell.pendingAction === 'building_village') newType = 'village';
-          else if (updatedCell.pendingAction === 'building_city') newType = 'city';
-          else if (updatedCell.pendingAction === 'building_county') newType = 'county';
-          else if (updatedCell.pendingAction === 'building_lumber_mill') newType = 'lumber_mill';
-          else if (updatedCell.pendingAction === 'building_stone_mason') newType = 'stone_mason';
-          else if (updatedCell.pendingAction === 'building_port') newType = 'port';
-          else if (updatedCell.pendingAction === 'building_mine') {
-            newType = 'mine'; newPendingAction = 'active_mine'; lastTickTime = currentTime; mineTicks = 0;
-          }
-          else if (updatedCell.pendingAction === 'building_animal_farm') {
-            newType = 'animal_farm'; animalCount = 2;
-          }
-          else if (updatedCell.pendingAction?.startsWith('planting_') && updatedCell.pendingAction !== 'planting_forest' && updatedCell.pendingAction !== 'planting_tree') {
-            newType = 'growing';
-            const cropType = updatedCell.cropType!;
-            busyUntil = currentTime + CROPS[cropType].growthTime;
-            busyTotalDuration = CROPS[cropType].growthTime;
-            newPendingAction = 'growing';
-          }
-          else if (updatedCell.pendingAction === 'growing') newType = 'ready';
-          else if (updatedCell.pendingAction === 'harvesting') {
-            newType = 'grass';
-            const crop = CROPS[updatedCell.cropType!];
-            const yieldFruits = crop.minYield + Math.floor(Math.random() * (crop.maxYield - crop.minYield + 1));
-            const yieldSeeds = crop.minSeeds + Math.floor(Math.random() * (crop.maxSeeds - crop.minSeeds + 1));
-            addReward(crop.id, yieldFruits);
-            addReward(`${crop.id}Seeds` as keyof Inventory, yieldSeeds);
-          }
-          else if (updatedCell.pendingAction === 'chopping') { newType = 'grass'; addReward('wood', 5 + Math.floor(Math.random() * 3)); }
-          else if (updatedCell.pendingAction === 'mining') {
-            newType = 'grass';
-            const dropRoll = Math.random() * 100;
-            if (dropRoll < 7) addReward('gold', 2);
-            else if (dropRoll < 20) addReward('copper', 3);
-            else if (dropRoll < 38) addReward('iron', 3);
-            else addReward('stone', 3 + Math.floor(Math.random() * 3));
-          }
-          else if (updatedCell.pendingAction === 'crafting_planks') { addReward('planks', 1); }
-          else if (updatedCell.pendingAction === 'crafting_bricks') { addReward('bricks', 1); }
-          else if (updatedCell.pendingAction === 'building_house') newType = 'house';
-
-          else if (updatedCell.pendingAction === 'hunting') {
-            newType = 'wild_animal';
-            let wildCount = updatedCell.wildAnimalCount || 1;
-            const roll = Math.random() * 100;
-            if (roll < 15) {
-              newlyDeadFarmers += 1;
-            } else if (roll < 35) {
-              addReward('wildMeat', 1);
-              wildCount -= 1;
-            }
-
-            if (wildCount <= 0) {
-              newType = 'grass';
-              wildAnimalCount = undefined;
-              updatedCell.wildReproductionTargetTime = undefined;
-            } else {
-              wildAnimalCount = wildCount;
-            }
-          }
-
-          updatedCell = {
-            ...updatedCell, type: newType, busyUntil, busyTotalDuration, pendingAction: newPendingAction,
-            cropType: newType === 'grass' ? undefined : updatedCell.cropType,
-            lastTickTime, mineTicks, forestTicks, animalCount, wildAnimalCount, farmersUsed: undefined
-          };
-        }
-
-        if (cellModified) gridChanged = true;
-        return updatedCell;
-      });
-
-      if (gridChanged) {
-        setGrid(newGrid);
-        if (Object.keys(newRewards).length > 0) {
-          setInventory(prev => {
-            const next = { ...prev };
-            (Object.keys(newRewards) as Array<keyof Inventory>).forEach(k => {
-              next[k] = (next[k] as number) + (newRewards[k] as number);
-            });
-            return next;
-          });
-        }
-      }
-
-      let respawnChanged = false;
-      let nextRespawning = [...respawningRef.current];
-
-      if (newlyDeadFarmers > 0) {
-        respawnChanged = true;
-        for (let i = 0; i < newlyDeadFarmers; i++) {
-          nextRespawning.push(currentTime + 40000);
-        }
-      }
-
-      const filteredRespawning = nextRespawning.filter(time => {
-        if (currentTime >= time) {
-          respawnChanged = true;
-          return false;
-        }
-        return true;
-      });
-
-      if (respawnChanged) {
-        setRespawningFarmers(filteredRespawning);
-      }
-
-    }, 100);
-
-    return () => clearInterval(interval);
-  }, [gameState]);
 
   // --- AZIONI GIOCATORE ---
   const startAction = (cellId: number, action: ActionType) => {
@@ -1249,7 +1030,6 @@ const App: React.FC = () => {
     const cell = grid.find(c => c.id === cellId);
     if (!cell) return;
 
-    // Le navi non consumano azioni dei cittadini
     if (action === 'fishing') {
       if (availableShips < 1) return;
       setGrid(prev => prev.map(c => c.id === cellId ? { ...c, pendingAction: action, lastTickTime: Date.now(), fishingTicks: 0 } : c));
@@ -1257,9 +1037,6 @@ const App: React.FC = () => {
       return;
     }
 
-    if (availableFarmers < 1) return;
-
-    // Determina il costo in azioni (uguale al numero di cittadini richiesti)
     let costFarmers = 1;
     if (action === 'hunting') costFarmers = 2;
     else if (action === 'start_active_forest') costFarmers = 3;
@@ -1553,7 +1330,7 @@ const App: React.FC = () => {
       const timeLeft = cell.busyUntil - now;
       const progress = 100 - Math.max(0, Math.min(100, (timeLeft / cell.busyTotalDuration) * 100));
       const isPassive = cell.pendingAction === 'growing';
-      const isPlayerAction = cell.pendingAction && !['growing', 'fishing', 'active_mine'].includes(cell.pendingAction);
+      const isPlayerAction = cell.pendingAction && !['growing', 'fishing', 'active_mine', 'active_forest'].includes(cell.pendingAction);
 
       return (
           <div className="progress-container">
@@ -1814,8 +1591,6 @@ const App: React.FC = () => {
     return () => { document.head.removeChild(styleTag); };
   }, []);
 
-  const firstIncompleteQuestIndex = ALL_QUESTS.findIndex(q => !completedQuests.includes(q.id));
-
   if (gameState === 'start') {
     return (
         <div className="fullscreen-menu">
@@ -1889,14 +1664,7 @@ const App: React.FC = () => {
 
   return (
       <div className="game-container">
-        {/* Input file nascosto per l'upload */}
-        <input
-            type="file"
-            accept=".json"
-            ref={fileInputRef}
-            onChange={handleImportSave}
-            style={{ display: 'none' }}
-        />
+        <input type="file" accept=".json" ref={fileInputRef} onChange={handleImportSave} style={{ display: 'none' }} />
 
         <div className="toast-container">
           {toasts.map(t => (
@@ -1946,7 +1714,6 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        {/* BOTTONE L'ANZIANO DEL VILLAGGIO */}
         <button className="floating-btn btn-elder pointer-events-auto" onClick={askVillageElder}>
           <Sparkles size={20} /> Anziano
         </button>
@@ -1997,7 +1764,6 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        {/* MODAL L'ANZIANO DEL VILLAGGIO (GEMINI API) */}
         {showElderModal && (
             <div className="action-modal-overlay" style={{zIndex: 100}} onClick={() => setShowElderModal(false)}>
               <div className="action-modal" onClick={e => e.stopPropagation()}>
@@ -2027,7 +1793,6 @@ const App: React.FC = () => {
             </div>
         )}
 
-        {/* MODAL MENU OPZIONI */}
         {showSettingsModal && (
             <div className="action-modal-overlay" style={{zIndex: 60}} onClick={() => setShowSettingsModal(false)}>
               <div className="action-modal" onClick={e => e.stopPropagation()}>
