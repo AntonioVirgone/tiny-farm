@@ -436,7 +436,7 @@ const App: React.FC = () => {
     setIsElderThinking(true);
     setShowElderModal(true);
 
-    const apiKey = ""; // La chiave API viene iniettata a runtime
+    const apiKey = "AIzaSyBlIySSRdHR413ApOqUuzVL02C93bghKis"; // La chiave API viene iniettata a runtime
 
     const systemPrompt =
         "Sei il saggio e antico Anziano del villaggio in un videogioco gestionale di agricoltura e costruzione città. " +
@@ -464,7 +464,7 @@ const App: React.FC = () => {
 
     const fetchWithRetry = async (retries = 5, delay = 1000): Promise<string> => {
       try {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
