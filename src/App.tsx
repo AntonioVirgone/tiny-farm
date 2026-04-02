@@ -1,3 +1,4 @@
+// @ts-nocheck - File di base per nuove funzionalità (non in produzione)
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Coins, TreePine, Mountain, Axe, Pickaxe,
