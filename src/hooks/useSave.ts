@@ -1,6 +1,4 @@
 import { useEffect } from 'react';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db, appId } from '../config/firebase';
 import type { Cell, GameState, Inventory, Toast, UnlockedBuildings } from '../types/game.types';
 
 interface SaveData {
@@ -15,7 +13,6 @@ interface SaveData {
 
 interface Params {
   gameState: GameState;
-  user: any;
   stateRef: React.MutableRefObject<SaveData>;
   isSaving: boolean;
   setIsSaving: React.Dispatch<React.SetStateAction<boolean>>;
@@ -44,7 +41,7 @@ const buildSavePayload = (state: SaveData) => ({
   actionsUsedToday: state.actionsUsedToday,
 });
 
-const applyLoadedData = (data: any, setters: Omit<Params, 'gameState' | 'user' | 'stateRef' | 'isSaving' | 'setIsSaving' | 'setHasSave' | 'setToasts'>) => {
+const applyLoadedData = (data: any, setters: Omit<Params, 'gameState' | 'stateRef' | 'isSaving' | 'setIsSaving' | 'setHasSave' | 'setToasts'>) => {
   setters.setInventory(data.inventory);
   setters.setUnlocked(data.unlocked);
   setters.setGrid(JSON.parse(data.grid));
@@ -57,65 +54,40 @@ const applyLoadedData = (data: any, setters: Omit<Params, 'gameState' | 'user' |
 };
 
 export const useSave = (params: Params) => {
-  const { gameState, user, stateRef, isSaving, setIsSaving, setHasSave, setToasts, ...setters } = params;
+  const { gameState, stateRef, isSaving, setIsSaving, setHasSave, setToasts, ...setters } = params;
 
   // Auto-save ogni 60s
   useEffect(() => {
     if (gameState !== 'playing') return;
     const autoSaveInterval = setInterval(() => handleSaveGame(true), 60000);
     return () => clearInterval(autoSaveInterval);
-  }, [gameState, user]);
+  }, [gameState]);
 
-  const handleSaveGame = async (isAuto = false) => {
+  const handleSaveGame = (isAuto = false) => {
     if (!isAuto) setIsSaving(true);
     const payload = buildSavePayload(stateRef.current);
-
     try {
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(payload));
       setHasSave(true);
-    } catch (e) {}
-
-    if (user && db) {
-      try {
-        const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'savegame', 'data');
-        await setDoc(docRef, payload);
-        const msg = isAuto ? 'Autosalvataggio cloud completato' : 'Partita salvata nel Cloud!';
-        setToasts(prev => [...prev, { id: 'save-' + Date.now(), title: msg, type: 'success' }]);
-      } catch (e) {
-        if (!isAuto) setToasts(prev => [...prev, { id: 'err-save', title: 'Salvataggio Cloud fallito (salvato in locale)', type: 'danger' }]);
-      }
-    } else {
-      const msg = isAuto ? 'Autosalvataggio locale completato' : 'Partita salvata in locale (Cloud disconnesso)';
+      const msg = isAuto ? 'Autosalvataggio completato' : 'Partita salvata!';
       setToasts(prev => [...prev, { id: 'save-' + Date.now(), title: msg, type: 'success' }]);
+    } catch {
+      if (!isAuto) setToasts(prev => [...prev, { id: 'err-save', title: 'Errore nel salvataggio', type: 'danger' }]);
     }
-
     if (!isAuto) setIsSaving(false);
     setTimeout(() => setToasts(prev => prev.filter(t => !t.id.startsWith('save-'))), 3000);
   };
 
-  const handleLoadGame = async () => {
-    let loadedData: any = null;
-    if (user && db) {
+  const handleLoadGame = () => {
+    const local = localStorage.getItem(LOCAL_STORAGE_KEY);
+    if (local) {
       try {
-        const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'savegame', 'data');
-        const snap = await getDoc(docRef);
-        if (snap.exists()) loadedData = snap.data();
-      } catch (e) {
-        console.error('Load Game Error', e);
+        const data = JSON.parse(local);
+        applyLoadedData(data, setters);
+      } catch {
+        setToasts(prev => [...prev, { id: 'err-load', title: 'Salvataggio corrotto', type: 'danger' }]);
+        setTimeout(() => setToasts(prev => prev.filter(t => t.id !== 'err-load')), 3000);
       }
-    }
-
-    if (!loadedData) {
-      const local = localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (local) {
-        loadedData = JSON.parse(local);
-        setToasts(prev => [...prev, { id: 'load-local', title: 'Caricato salvataggio locale', type: 'success' }]);
-      }
-    }
-
-    if (loadedData) {
-      applyLoadedData(loadedData, setters);
-      setTimeout(() => setToasts(prev => prev.filter(t => t.id !== 'load-local')), 3000);
     } else {
       setToasts(prev => [...prev, { id: 'err-load', title: 'Nessun salvataggio trovato', type: 'danger' }]);
       setTimeout(() => setToasts(prev => prev.filter(t => t.id !== 'err-load')), 3000);

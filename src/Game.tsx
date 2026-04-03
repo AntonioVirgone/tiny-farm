@@ -1,8 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { onAuthStateChanged, signInAnonymously, signInWithCustomToken } from 'firebase/auth';
-
-import { auth, db, appId } from './config/firebase';
-import { doc, getDoc } from 'firebase/firestore';
 import { ACTION_TIMES, BASE_INITIAL_FARMERS, COSTS, CROPS, INITIAL_INVENTORY, INITIAL_UNLOCKED } from './constants/game.constants';
 import { useGameEvents } from './hooks/useGameEvents';
 import { useGameLoop } from './hooks/useGameLoop';
@@ -718,12 +714,9 @@ body {
 .animate-bounce-slow { animation: bounce-slow 2s infinite ease-in-out; }
 `;
 
-declare var __initial_auth_token: string | undefined;
-
 const Game: React.FC = () => {
   // --- STATE ---
   const [gameState, setGameState] = useState<GameState>('start');
-  const [user, setUser] = useState<any>(null);
   const [hasSave, setHasSave] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -766,22 +759,6 @@ const Game: React.FC = () => {
     styleTag.innerHTML = GAME_CSS;
     document.head.appendChild(styleTag);
     return () => { document.head.removeChild(styleTag); };
-  }, []);
-
-  // --- FIREBASE AUTH ---
-  useEffect(() => {
-    if (!auth) return;
-    const initAuth = async () => {
-      try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
-      } catch (e) { console.error('Auth error', e); }
-    };
-    initAuth();
-    return onAuthStateChanged(auth, setUser);
   }, []);
 
   // --- DERIVED STATE ---
@@ -1068,30 +1045,18 @@ const Game: React.FC = () => {
   useGameEvents({ gameState, gridRef, respawningRef, setGrid, setRespawningFarmers, setToasts });
 
   const { handleSaveGame, handleLoadGame, handleExportSave, handleImportSave } = useSave({
-    gameState, user, stateRef, isSaving, setIsSaving, setHasSave, setToasts,
+    gameState, stateRef, isSaving, setIsSaving, setHasSave, setToasts,
     setInventory, setUnlocked, setGrid, setCompletedQuests,
     setRespawningFarmers, setDayCount, setActionsUsedToday, setIsNight, setGameState,
   });
 
   const { showElderModal, setShowElderModal, elderMessage, isElderThinking, askVillageElder } = useVillageElder();
 
-  // --- CHECK SAVE ON LOAD (locale + cloud) ---
+  // --- CHECK SAVE ON LOAD ---
   useEffect(() => {
     const localSave = localStorage.getItem('fattoria_avanzata_save');
     if (localSave) setHasSave(true);
-
-    if (!user || !db) return;
-    const checkCloudSave = async () => {
-      try {
-        const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'savegame', 'data');
-        const snap = await getDoc(docRef);
-        if (snap.exists()) setHasSave(true);
-      } catch (e) {
-        console.error('Check Save Error', e);
-      }
-    };
-    checkCloudSave();
-  }, [user]);
+  }, []);
 
   // --- ACTIONS ---
   const startNewGame = () => {
