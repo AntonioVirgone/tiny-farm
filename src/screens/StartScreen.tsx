@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
-import { BookMarked, Play, RefreshCw } from 'lucide-react';
+import { BookMarked, Play, RefreshCw, Settings } from 'lucide-react';
 import TutorialModal from '../components/modals/TutorialModal';
 
 interface Props {
   hasSave: boolean;
   onNewGame: () => void;
   onLoadGame: () => void;
+  onOpenConfig: () => void;
 }
 
-const StartScreen: React.FC<Props> = ({ hasSave, onNewGame, onLoadGame }) => {
+const StartScreen: React.FC<Props> = ({ hasSave, onNewGame, onLoadGame, onOpenConfig }) => {
   const [showTutorial, setShowTutorial] = useState(false);
 
   return (
@@ -32,6 +33,9 @@ const StartScreen: React.FC<Props> = ({ hasSave, onNewGame, onLoadGame }) => {
         </button>
         <button className="btn-start" style={{ background: 'linear-gradient(135deg, #374151, #1f2937)', boxShadow: '0 8px 24px rgba(0,0,0,0.3)' }} onClick={() => setShowTutorial(true)}>
           <BookMarked size={22} /> Tutorial & Regole
+        </button>
+        <button className="btn-start" style={{ background: 'linear-gradient(135deg, #6d28d9, #5b21b6)', boxShadow: '0 8px 24px rgba(109,40,217,0.3)' }} onClick={onOpenConfig}>
+          <Settings size={22} /> Configura Gioco
         </button>
       </div>
 

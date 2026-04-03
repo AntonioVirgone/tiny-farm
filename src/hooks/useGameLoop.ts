@@ -1,5 +1,7 @@
 import { useEffect } from 'react';
 import { CROPS } from '../constants/game.constants';
+import { DEFAULT_GAME_CONFIG } from '../constants/config.defaults';
+import type { GameConfig } from '../types/config.types';
 import type { Cell, GameState, Inventory } from '../types/game.types';
 
 interface Params {
@@ -9,10 +11,11 @@ interface Params {
   setNow: React.Dispatch<React.SetStateAction<number>>;
   setRespawningFarmers: React.Dispatch<React.SetStateAction<number[]>>;
   respawningRef: React.MutableRefObject<number[]>;
+  gameConfig?: GameConfig;
 }
 
 export const useGameLoop = ({
-  gameState, setGrid, setInventory, setNow, setRespawningFarmers, respawningRef,
+  gameState, setGrid, setInventory, setNow, setRespawningFarmers, respawningRef, gameConfig = DEFAULT_GAME_CONFIG,
 }: Params) => {
   useEffect(() => {
     if (gameState !== 'playing') return;
@@ -60,7 +63,7 @@ export const useGameLoop = ({
             const timeSinceLastTick = currentTime - (updatedCell.lastTickTime || currentTime);
             if (timeSinceLastTick >= 15000) {
               cellModified = true;
-              addReward('wood', 2);
+              addReward('wood', gameConfig.forestWoodPerTick);
               const newTicks = (updatedCell.forestTicks || 0) + 1;
               if (newTicks >= 4) {
                 updatedCell = { ...updatedCell, type: 'grass', pendingAction: null, lastTickTime: undefined, forestTicks: undefined, farmersUsed: undefined };
@@ -112,7 +115,7 @@ export const useGameLoop = ({
             const timeSinceLastTick = currentTime - (updatedCell.lastTickTime || currentTime);
             if (timeSinceLastTick >= 10000) {
               cellModified = true;
-              addReward('fish', 3);
+              addReward('fish', gameConfig.fishPerTick);
               const newTicks = (updatedCell.fishingTicks || 0) + 1;
               if (newTicks >= 3) {
                 updatedCell = { ...updatedCell, pendingAction: null, lastTickTime: undefined, fishingTicks: undefined };
@@ -149,18 +152,27 @@ export const useGameLoop = ({
             else if (updatedCell.pendingAction?.startsWith('planting_') && updatedCell.pendingAction !== 'planting_forest' && updatedCell.pendingAction !== 'planting_tree') {
               newType = 'growing';
               const cropType = updatedCell.cropType!;
-              updatedCell.busyUntil = currentTime + CROPS[cropType].growthTime;
-              updatedCell.busyTotalDuration = CROPS[cropType].growthTime;
+              const growthTime = gameConfig.crops[cropType]?.growthTime ?? CROPS[cropType].growthTime;
+              updatedCell.busyUntil = currentTime + growthTime;
+              updatedCell.busyTotalDuration = growthTime;
               newPendingAction = 'growing';
             }
             else if (updatedCell.pendingAction === 'growing') newType = 'ready';
             else if (updatedCell.pendingAction === 'harvesting') {
               newType = 'grass';
               const crop = CROPS[updatedCell.cropType!];
-              addReward(crop.id, crop.minYield + Math.floor(Math.random() * (crop.maxYield - crop.minYield + 1)));
+              const cfgCrop = gameConfig.crops[updatedCell.cropType!];
+              const yMin = cfgCrop?.minYield ?? crop.minYield;
+              const yMax = cfgCrop?.maxYield ?? crop.maxYield;
+              addReward(crop.id, yMin + Math.floor(Math.random() * (yMax - yMin + 1)));
               addReward(`${crop.id}Seeds` as keyof Inventory, crop.minSeeds + Math.floor(Math.random() * (crop.maxSeeds - crop.minSeeds + 1)));
             }
-            else if (updatedCell.pendingAction === 'chopping') { newType = 'grass'; addReward('wood', 5 + Math.floor(Math.random() * 3)); }
+            else if (updatedCell.pendingAction === 'chopping') {
+              newType = 'grass';
+              const wMin = gameConfig.choppingWoodMin;
+              const wMax = gameConfig.choppingWoodMax;
+              addReward('wood', wMin + Math.floor(Math.random() * (wMax - wMin + 1)));
+            }
             else if (updatedCell.pendingAction === 'mining') {
               newType = 'grass';
               const dropRoll = Math.random() * 100;
@@ -182,9 +194,9 @@ export const useGameLoop = ({
             }
             else if (updatedCell.pendingAction === 'harvesting_bush') {
               newType = 'grass';
-              addReward('berries', 3);
+              addReward('berries', gameConfig.bushBerriesAmount);
               const seedTypes: Array<keyof Inventory> = ['wheatSeeds', 'tomatoSeeds', 'carrotSeeds', 'eggplantSeeds'];
-              for (let s = 0; s < 2; s++) {
+              for (let s = 0; s < gameConfig.bushSeedsAmount; s++) {
                 addReward(seedTypes[Math.floor(Math.random() * seedTypes.length)], 1);
               }
             }

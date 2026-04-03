@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ACTION_TIMES, BASE_INITIAL_FARMERS, COSTS, CROPS, INITIAL_INVENTORY, INITIAL_UNLOCKED } from './constants/game.constants';
+import { BASE_INITIAL_FARMERS, COSTS, CROPS, INITIAL_INVENTORY, INITIAL_UNLOCKED } from './constants/game.constants';
+import { loadGameConfig, saveGameConfig } from './constants/config.defaults';
+import type { GameConfig } from './types/config.types';
 import { useGameEvents } from './hooks/useGameEvents';
 import { useGameLoop } from './hooks/useGameLoop';
 import { useSave } from './hooks/useSave';
@@ -21,6 +23,7 @@ import HUD from './components/HUD';
 import ToastContainer from './components/ToastContainer';
 import GameOverScreen from './screens/GameOverScreen';
 import StartScreen from './screens/StartScreen';
+import ConfigScreen from './screens/ConfigScreen';
 
 import {
   Anchor, Axe, Factory, Hammer,
@@ -668,6 +671,19 @@ body {
   width: 100%;
 }
 
+/* ── CONFIG SCREEN ────────────────────────────────── */
+.cfg-body { padding: 16px; }
+.cfg-section { display: flex; flex-direction: column; gap: 6px; }
+.cfg-group-title { font-size: 12px; font-weight: 700; text-transform: uppercase; color: #3b82f6; letter-spacing: 0.06em; margin: 4px 0 2px; }
+.cfg-field { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #f1f5f9; }
+.cfg-label { font-size: 13px; color: #374151; font-weight: 500; flex: 1; }
+.cfg-control { display: flex; align-items: center; gap: 4px; }
+.cfg-btn { width: 28px; height: 28px; border-radius: 6px; border: 1px solid #e2e8f0; background: #f8fafc; color: #374151; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-weight: 700; line-height: 1; }
+.cfg-btn:hover { background: #e2e8f0; }
+.cfg-input { width: 64px; text-align: center; border: 1px solid #e2e8f0; border-radius: 6px; padding: 4px; font-size: 13px; font-weight: 600; font-family: inherit; }
+.cfg-input::-webkit-inner-spin-button, .cfg-input::-webkit-outer-spin-button { opacity: 0; }
+.cfg-unit { font-size: 12px; color: #94a3b8; min-width: 18px; }
+
 /* ── ELDER MODAL ──────────────────────────────────── */
 .elder-chat-box {
   background: white;
@@ -718,6 +734,8 @@ const Game: React.FC = () => {
   // --- STATE ---
   const [gameState, setGameState] = useState<GameState>('start');
   const [hasSave, setHasSave] = useState(false);
+  const [showConfig, setShowConfig] = useState(false);
+  const [gameConfig, setGameConfig] = useState<GameConfig>(loadGameConfig);
   const [isSaving, setIsSaving] = useState(false);
 
   const [dayCount, setDayCount] = useState(1);
@@ -1041,7 +1059,7 @@ const Game: React.FC = () => {
   }, [isNight, gameState, dayCount]);
 
   // --- HOOKS ---
-  useGameLoop({ gameState, setGrid, setInventory, setNow, setRespawningFarmers, respawningRef });
+  useGameLoop({ gameState, setGrid, setInventory, setNow, setRespawningFarmers, respawningRef, gameConfig });
   useGameEvents({ gameState, gridRef, respawningRef, setGrid, setRespawningFarmers, setToasts });
 
   const { handleSaveGame, handleLoadGame, handleExportSave, handleImportSave } = useSave({
@@ -1060,7 +1078,7 @@ const Game: React.FC = () => {
 
   // --- ACTIONS ---
   const startNewGame = () => {
-    setInventory(INITIAL_INVENTORY);
+    setInventory({ ...INITIAL_INVENTORY, coins: gameConfig.initialCoins, wheatSeeds: gameConfig.initialWheatSeeds });
     setUnlocked(INITIAL_UNLOCKED);
     setGrid(generateInitialGrid());
     setRespawningFarmers([]);
@@ -1078,6 +1096,7 @@ const Game: React.FC = () => {
     if (isNight) return;
     const cell = grid.find(c => c.id === cellId);
     if (!cell) return;
+    const at = gameConfig.actionTimes;
 
     // Azione speciale: vendi animale direttamente dalla cella
     if (action === 'sell_animal') {
@@ -1121,14 +1140,14 @@ const Game: React.FC = () => {
     }
 
     if (action === 'hunting') {
-      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + ACTION_TIMES.hunting, busyTotalDuration: ACTION_TIMES.hunting, pendingAction: action, farmersUsed: costFarmers } : c));
+      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + at.hunting, busyTotalDuration: at.hunting, pendingAction: action, farmersUsed: costFarmers } : c));
       setActionsUsedToday(prev => prev + costFarmers);
       setSelectedCell(null);
       return;
     }
 
     if (action === 'hunting_wolf') {
-      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + ACTION_TIMES.hunting_wolf, busyTotalDuration: ACTION_TIMES.hunting_wolf, pendingAction: action, farmersUsed: costFarmers } : c));
+      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + at.hunting_wolf, busyTotalDuration: at.hunting_wolf, pendingAction: action, farmersUsed: costFarmers } : c));
       setActionsUsedToday(prev => prev + costFarmers);
       setSelectedCell(null);
       return;
@@ -1155,7 +1174,7 @@ const Game: React.FC = () => {
     if (action && action in buildingCosts) {
       if (!buildingCosts[action]()) return;
       setInventory(prev => ({ ...prev, ...buildingInventoryUpdates[action]() }));
-      const duration = ACTION_TIMES[action as keyof typeof ACTION_TIMES] || 15000;
+      const duration = at[action as keyof typeof at] || 15000;
       setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers } : c));
       setActionsUsedToday(prev => prev + costFarmers);
       setSelectedCell(null);
@@ -1174,7 +1193,7 @@ const Game: React.FC = () => {
       const costCoins = (COSTS[cost] as any).coins;
       if (!targetCells || inventory.coins < costCoins) return;
       setInventory(prev => ({ ...prev, coins: prev.coins - costCoins }));
-      const duration = ACTION_TIMES[action as keyof typeof ACTION_TIMES] || 20000;
+      const duration = at[action as keyof typeof at] || 20000;
       setGrid(prev => prev.map(c => {
         if (c.id === cellId) return { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers };
         if (targetCells.includes(c.id)) return { ...c, type: 'grass', pendingAction: null, busyUntil: null, busyTotalDuration: null, farmersUsed: undefined };
@@ -1188,7 +1207,7 @@ const Game: React.FC = () => {
     if (action === 'crafting_planks') {
       if (inventory.wood < 2) return;
       setInventory(prev => ({ ...prev, wood: prev.wood - 2 }));
-      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + ACTION_TIMES.crafting, busyTotalDuration: ACTION_TIMES.crafting, pendingAction: action, farmersUsed: costFarmers } : c));
+      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + at.crafting, busyTotalDuration: at.crafting, pendingAction: action, farmersUsed: costFarmers } : c));
       setActionsUsedToday(prev => prev + costFarmers);
       setSelectedCell(null);
       return;
@@ -1197,7 +1216,7 @@ const Game: React.FC = () => {
     if (action === 'crafting_bricks') {
       if (inventory.stone < 2) return;
       setInventory(prev => ({ ...prev, stone: prev.stone - 2 }));
-      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + ACTION_TIMES.crafting, busyTotalDuration: ACTION_TIMES.crafting, pendingAction: action, farmersUsed: costFarmers } : c));
+      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + at.crafting, busyTotalDuration: at.crafting, pendingAction: action, farmersUsed: costFarmers } : c));
       setActionsUsedToday(prev => prev + costFarmers);
       setSelectedCell(null);
       return;
@@ -1206,7 +1225,7 @@ const Game: React.FC = () => {
     if (action === 'planting_tree') {
       if (inventory.coins < COSTS.tree.coins) return;
       setInventory(prev => ({ ...prev, coins: prev.coins - COSTS.tree.coins }));
-      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + ACTION_TIMES.planting_tree, busyTotalDuration: ACTION_TIMES.planting_tree, pendingAction: action, farmersUsed: costFarmers } : c));
+      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + at.planting_tree, busyTotalDuration: at.planting_tree, pendingAction: action, farmersUsed: costFarmers } : c));
       setActionsUsedToday(prev => prev + costFarmers);
       setSelectedCell(null);
       return;
@@ -1215,7 +1234,7 @@ const Game: React.FC = () => {
     if (action === 'planting_forest') {
       if (inventory.coins < COSTS.forest.coins || inventory.stone < COSTS.forest.stone) return;
       setInventory(prev => ({ ...prev, coins: prev.coins - COSTS.forest.coins, stone: prev.stone - COSTS.forest.stone }));
-      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + ACTION_TIMES.planting_forest, busyTotalDuration: ACTION_TIMES.planting_forest, pendingAction: action, farmersUsed: costFarmers } : c));
+      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + at.planting_forest, busyTotalDuration: at.planting_forest, pendingAction: action, farmersUsed: costFarmers } : c));
       setActionsUsedToday(prev => prev + costFarmers);
       setSelectedCell(null);
       return;
@@ -1224,7 +1243,7 @@ const Game: React.FC = () => {
     if (action === 'spawn_rock') {
       if (inventory.coins < COSTS.rock.coins) return;
       setInventory(prev => ({ ...prev, coins: prev.coins - COSTS.rock.coins }));
-      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + ACTION_TIMES.spawn_rock, busyTotalDuration: ACTION_TIMES.spawn_rock, pendingAction: action, farmersUsed: costFarmers } : c));
+      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + at.spawn_rock, busyTotalDuration: at.spawn_rock, pendingAction: action, farmersUsed: costFarmers } : c));
       setActionsUsedToday(prev => prev + costFarmers);
       setSelectedCell(null);
       return;
@@ -1233,7 +1252,7 @@ const Game: React.FC = () => {
     if (action === 'planting_bush') {
       if (inventory.coins < COSTS.bush.coins) return;
       setInventory(prev => ({ ...prev, coins: prev.coins - COSTS.bush.coins }));
-      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + ACTION_TIMES.planting_bush, busyTotalDuration: ACTION_TIMES.planting_bush, pendingAction: action, farmersUsed: costFarmers } : c));
+      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + at.planting_bush, busyTotalDuration: at.planting_bush, pendingAction: action, farmersUsed: costFarmers } : c));
       setActionsUsedToday(prev => prev + costFarmers);
       setSelectedCell(null);
       return;
@@ -1244,14 +1263,14 @@ const Game: React.FC = () => {
       const seedKey = `${cropId}Seeds` as keyof Inventory;
       if ((inventory[seedKey] as number) < 1) return;
       setInventory(prev => ({ ...prev, [seedKey]: (prev[seedKey] as number) - 1 }));
-      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + ACTION_TIMES.planting, busyTotalDuration: ACTION_TIMES.planting, pendingAction: action, cropType: cropId, farmersUsed: costFarmers } : c));
+      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + at.planting, busyTotalDuration: at.planting, pendingAction: action, cropType: cropId, farmersUsed: costFarmers } : c));
       setActionsUsedToday(prev => prev + costFarmers);
       setSelectedCell(null);
       return;
     }
 
     if (['plowing', 'chopping', 'mining', 'harvesting', 'harvesting_bush'].includes(action as string)) {
-      const duration = ACTION_TIMES[action as keyof typeof ACTION_TIMES];
+      const duration = at[action as keyof typeof at];
       setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers } : c));
       setActionsUsedToday(prev => prev + costFarmers);
     }
@@ -1260,7 +1279,7 @@ const Game: React.FC = () => {
   };
 
   const buySeed = (cropId: CropId) => {
-    const cost = CROPS[cropId].seedCost;
+    const cost = gameConfig.crops[cropId]?.seedCost ?? CROPS[cropId].seedCost;
     if (inventory.coins >= cost) setInventory(prev => ({ ...prev, coins: prev.coins - cost, [`${cropId}Seeds`]: (prev[`${cropId}Seeds` as keyof Inventory] as number) + 1 }));
   };
 
@@ -1288,7 +1307,18 @@ const Game: React.FC = () => {
 
   // --- RENDER ---
   if (gameState === 'start') {
-    return <StartScreen hasSave={hasSave} onNewGame={startNewGame} onLoadGame={handleLoadGame} />;
+    return (
+      <>
+        <StartScreen hasSave={hasSave} onNewGame={startNewGame} onLoadGame={handleLoadGame} onOpenConfig={() => setShowConfig(true)} />
+        {showConfig && (
+          <ConfigScreen
+            config={gameConfig}
+            onSave={(cfg) => { setGameConfig(cfg); saveGameConfig(cfg); }}
+            onClose={() => setShowConfig(false)}
+          />
+        )}
+      </>
+    );
   }
 
   if (gameState === 'gameover') {
