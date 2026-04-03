@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { CROPS } from '../constants/game.constants';
 import type { Cell, Inventory } from '../types/game.types';
 
@@ -14,7 +14,7 @@ const makeCell = (id: number, overrides: Partial<Cell> = {}): Cell => ({
 
 // Simula la logica di completamento azione estratta da useGameLoop
 // (stessa logica — se cambia lì, i test lo rilevano)
-const processCompletedAction = (cell: Cell, now: number): {
+const processCompletedAction = (cell: Cell, _now: number): {
   newType: Cell['type'];
   rewards: Partial<Inventory>;
   deadFarmers: number;
