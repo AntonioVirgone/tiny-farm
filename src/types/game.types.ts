@@ -20,7 +20,7 @@ export type CellType =
   | 'grass' | 'water' | 'plowed' | 'growing' | 'ready'
   | 'tree' | 'forest' | 'rock' | 'house' | 'mine'
   | 'animal_farm' | 'village' | 'city' | 'county'
-  | 'lumber_mill' | 'stone_mason' | 'wild_animal' | 'wolf' | 'port';
+  | 'lumber_mill' | 'stone_mason' | 'wild_animal' | 'wolf' | 'port' | 'bush';
 
 export type ActionType =
   | 'plowing' | 'chopping' | 'mining' | 'building_house' | 'building_mine'
@@ -28,7 +28,7 @@ export type ActionType =
   | 'building_village' | 'building_city' | 'building_county'
   | 'building_lumber_mill' | 'building_stone_mason' | 'building_port'
   | 'active_mine' | 'active_forest' | 'harvesting' | 'growing'
-  | 'fishing' | 'hunting' | 'hunting_wolf' | 'crafting_planks' | 'crafting_bricks'
+  | 'fishing' | 'hunting' | 'hunting_wolf' | 'harvesting_bush' | 'crafting_planks' | 'crafting_bricks'
   | 'spawn_rock' | 'start_active_forest'
   | string | null;
 
@@ -45,6 +45,7 @@ export interface Inventory {
   eggplant: number;
   eggplantSeeds: number;
   fish: number;
+  berries: number;
   planks: number;
   bricks: number;
   wildMeat: number;
@@ -66,6 +67,7 @@ export interface UnlockedBuildings {
   tree: boolean;
   forest: boolean;
   rock: boolean;
+  bush: boolean;
 }
 
 export interface Cell {

@@ -2,7 +2,7 @@ import React from 'react';
 import {
   Anchor, Axe, Castle, CloudFog, Coins, Crosshair, Dog, Factory,
   Home, Landmark, Mountain, PawPrint, Pickaxe, Rabbit,
-  Ship, Skull, Sprout, Tent, Tractor, TreePine, Warehouse, X, Zap,
+  Ship, Shrub, Skull, Sprout, Tent, Tractor, TreePine, Warehouse, X, Zap,
 } from 'lucide-react';
 import { ACTION_TIMES, COSTS, CROPS } from '../../constants/game.constants';
 import type { ActionType, Cell, CropId, Inventory, UnlockedBuildings } from '../../types/game.types';
@@ -50,6 +50,7 @@ const CellActionModal: React.FC<Props> = ({
       {cell.type === 'forest' && 'Bosco Rigoglioso'}
       {cell.type === 'rock' && 'Roccia Solida'}
       {cell.type === 'wild_animal' && 'Animali Selvatici'}
+      {cell.type === 'bush' && 'Cespuglio'}
       {cell.type === 'wolf' && 'Branco di Lupi!'}
       {cell.type === 'ready' && 'Raccolto Pronto!'}
       {cell.type === 'growing' && 'Coltura in crescita...'}
@@ -205,6 +206,14 @@ const CellActionModal: React.FC<Props> = ({
                       </span>
                     </button>
                   )}
+                  {unlocked.bush && (
+                    <button className="action-btn btn-plant-forest" disabled={actionsLeft < COSTS.bush.farmers || inventory.coins < COSTS.bush.coins} onClick={() => onAction(cell.id, 'planting_bush')}>
+                      <Shrub size={20} /> Pianta Cespuglio ({ACTION_TIMES.planting_bush / 1000}s)
+                      <span className="action-badge" style={{ background: inventory.coins >= COSTS.bush.coins && actionsLeft >= COSTS.bush.farmers ? 'rgba(255,255,255,0.2)' : '#ef4444' }}>
+                        {COSTS.bush.coins}<Coins size={10} /> {COSTS.bush.farmers}<Zap size={10} />
+                      </span>
+                    </button>
+                  )}
                   {unlocked.forest && (
                     <button className="action-btn btn-plant-forest" disabled={actionsLeft < COSTS.forest.farmers || !canPlantForest} onClick={() => onAction(cell.id, 'planting_forest')}>
                       <div style={{ display: 'flex', marginRight: '4px' }}><TreePine size={20} /><TreePine size={20} style={{ marginLeft: '-10px' }} /></div> Pianta Bosco ({ACTION_TIMES.planting_forest / 1000}s)
@@ -253,6 +262,18 @@ const CellActionModal: React.FC<Props> = ({
                 <button className="action-btn btn-chop" disabled={actionsLeft < 1} onClick={() => onAction(cell.id, 'chopping')}>
                   <Axe size={20} /> Taglia Albero ({ACTION_TIMES.chopping / 1000}s)
                 </button>
+              )}
+
+              {cell.type === 'bush' && (
+                <div style={{ textAlign: 'center', padding: '10px' }}>
+                  <Shrub size={40} color="#15803d" fill="#16a34a" style={{ margin: '0 auto 10px' }} />
+                  <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '15px' }}>
+                    Raccogliendo otterrai <b>3 bacche</b> e <b>2 semi casuali</b> (grano, pomodoro, carota o melanzana).
+                  </div>
+                  <button className="action-btn btn-harvest" disabled={actionsLeft < 1} onClick={() => onAction(cell.id, 'harvesting_bush')}>
+                    <Shrub size={20} /> Raccogli Bacche ({ACTION_TIMES.harvesting_bush / 1000}s)
+                  </button>
+                </div>
               )}
 
               {cell.type === 'rock' && (

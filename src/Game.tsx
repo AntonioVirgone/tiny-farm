@@ -99,6 +99,7 @@ const GAME_CSS = `
   .cell.water { background: #0ea5e9; box-shadow: inset 0 0 10px rgba(2, 132, 199, 0.5); }
   .cell.wild_animal { background: #86efac; }
   .cell.wolf { background: #e2e8f0; box-shadow: inset 0 0 10px rgba(0,0,0,0.2); }
+  .cell.bush { background: #bbf7d0; }
 
   .progress-container { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; height: 100%; }
   .progress-bar-bg { position: absolute; bottom: 4px; width: 80%; height: 6px; background: rgba(0,0,0,0.3); border-radius: 4px; overflow: hidden; border: 1px solid rgba(255,255,255,0.2); z-index: 20; }
@@ -312,6 +313,7 @@ const Game: React.FC = () => {
       checkUnlock('mine', inventory.wood >= COSTS.mine.wood && inventory.coins >= COSTS.mine.coins && totalFarmers >= COSTS.mine.farmers);
       checkUnlock('port', inventory.wood >= COSTS.port.wood && inventory.stone >= COSTS.port.stone && inventory.coins >= COSTS.port.coins && totalFarmers >= COSTS.port.farmers);
       checkUnlock('rock', inventory.coins >= COSTS.rock.coins && totalFarmers >= COSTS.rock.farmers);
+      checkUnlock('bush', inventory.coins >= COSTS.bush.coins && totalFarmers >= COSTS.bush.farmers);
       checkUnlock('village', inventory.coins >= COSTS.village.coins && totalFarmers >= COSTS.village.farmers);
       checkUnlock('city', inventory.coins >= COSTS.city.coins && totalFarmers >= COSTS.city.farmers);
       checkUnlock('county', inventory.coins >= COSTS.county.coins && totalFarmers >= COSTS.county.farmers);
@@ -461,7 +463,7 @@ const Game: React.FC = () => {
         }
       }
 
-      // Spawn alberi
+      // Spawn alberi e cespugli
       const emptyGrass = newGrid.map((c, idx) => c.type === 'grass' && !c.busyUntil && c.pendingAction === null ? idx : -1).filter(idx => idx !== -1);
       if (emptyGrass.length > 0) {
         const spawnCount = Math.floor(Math.random() * 3) + 1;
@@ -469,7 +471,7 @@ const Game: React.FC = () => {
           if (emptyGrass.length === 0) break;
           const randIndex = Math.floor(Math.random() * emptyGrass.length);
           const cellId = emptyGrass[randIndex];
-          newGrid[cellId] = { ...newGrid[cellId], type: 'tree' };
+          newGrid[cellId] = { ...newGrid[cellId], type: Math.random() < 0.3 ? 'bush' : 'tree' };
           emptyGrass.splice(randIndex, 1);
           gridChanged = true;
         }
@@ -578,6 +580,7 @@ const Game: React.FC = () => {
     else if (action === 'planting_tree') costFarmers = COSTS.tree.farmers;
     else if (action === 'planting_forest') costFarmers = COSTS.forest.farmers;
     else if (action === 'spawn_rock') costFarmers = COSTS.rock.farmers;
+    else if (action === 'planting_bush') costFarmers = COSTS.bush.farmers;
 
     if (actionsLeft < costFarmers) return;
 
@@ -693,6 +696,15 @@ const Game: React.FC = () => {
       if (inventory.coins < COSTS.rock.coins) return;
       setInventory(prev => ({ ...prev, coins: prev.coins - COSTS.rock.coins }));
       setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + ACTION_TIMES.spawn_rock, busyTotalDuration: ACTION_TIMES.spawn_rock, pendingAction: action, farmersUsed: costFarmers } : c));
+      setActionsUsedToday(prev => prev + costFarmers);
+      setSelectedCell(null);
+      return;
+    }
+
+    if (action === 'planting_bush') {
+      if (inventory.coins < COSTS.bush.coins) return;
+      setInventory(prev => ({ ...prev, coins: prev.coins - COSTS.bush.coins }));
+      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + ACTION_TIMES.planting_bush, busyTotalDuration: ACTION_TIMES.planting_bush, pendingAction: action, farmersUsed: costFarmers } : c));
       setActionsUsedToday(prev => prev + costFarmers);
       setSelectedCell(null);
       return;

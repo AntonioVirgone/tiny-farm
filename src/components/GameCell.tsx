@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   Anchor, Castle, Dog, Droplets, Factory, Fish, Home, Landmark,
-  Mountain, Pickaxe, Rabbit, Sprout, Tent, TreePine, Warehouse,
+  Mountain, Pickaxe, Rabbit, Shrub, Sprout, Tent, TreePine, Warehouse,
 } from 'lucide-react';
 import AnimatedStickman from './AnimatedStickman';
 import { CROPS } from '../constants/game.constants';
@@ -110,6 +110,8 @@ const GameCell: React.FC<Props> = ({ cell, now }) => {
           {cell.pendingAction === 'crafting_planks' && <span>📦</span>}
           {cell.pendingAction === 'crafting_bricks' && <span>🧱</span>}
           {(cell.pendingAction === 'hunting' || cell.pendingAction === 'hunting_wolf') && <span>🎯</span>}
+          {cell.pendingAction === 'harvesting_bush' && <Shrub size={24} color="#15803d" />}
+          {cell.pendingAction === 'planting_bush' && <Shrub size={24} color="#16a34a" />}
           {isPassive && cell.cropType && React.createElement(CROPS[cell.cropType].icon, { size: 24, color: CROPS[cell.cropType].color })}
         </div>
         <div className="progress-bar-bg">
@@ -123,6 +125,7 @@ const GameCell: React.FC<Props> = ({ cell, now }) => {
     case 'grass': return null;
     case 'water': return <Droplets size={26} color="#38bdf8" fill="#7dd3fc" opacity={0.6} />;
     case 'tree': return <TreePine size={28} color="#14532d" fill="#166534" />;
+    case 'bush': return <Shrub size={28} color="#15803d" fill="#16a34a" />;
     case 'forest': return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <TreePine size={28} color="#14532d" fill="#166534" />

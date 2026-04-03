@@ -28,8 +28,9 @@ export const generateInitialGrid = (): Cell[] => {
       type = 'water';
     } else {
       const rand = Math.random();
-      if (rand < 0.15) type = 'tree';
-      else if (rand < 0.25) type = 'rock';
+      if (rand < 0.12) type = 'tree';
+      else if (rand < 0.20) type = 'rock';
+      else if (rand < 0.27) type = 'bush';
     }
     grid[i] = { id: i, type, busyUntil: null, busyTotalDuration: null, pendingAction: null };
     if (type === 'grass') emptyGrassCells.push(i);

@@ -130,6 +130,7 @@ export const useGameLoop = ({
 
             if (updatedCell.pendingAction === 'plowing') newType = 'plowed';
             else if (updatedCell.pendingAction === 'planting_tree') newType = 'tree';
+            else if (updatedCell.pendingAction === 'planting_bush') newType = 'bush';
             else if (updatedCell.pendingAction === 'planting_forest') newType = 'forest';
             else if (updatedCell.pendingAction === 'spawn_rock') newType = 'rock';
             else if (updatedCell.pendingAction === 'building_village') newType = 'village';
@@ -178,6 +179,14 @@ export const useGameLoop = ({
               else if (Math.random() * 100 < 35) { addReward('wildMeat', 1); wildCount -= 1; }
               if (wildCount <= 0) { newType = 'grass'; updatedCell.wildAnimalCount = undefined; updatedCell.wildReproductionTargetTime = undefined; }
               else { updatedCell.wildAnimalCount = wildCount; }
+            }
+            else if (updatedCell.pendingAction === 'harvesting_bush') {
+              newType = 'grass';
+              addReward('berries', 3);
+              const seedTypes: Array<keyof Inventory> = ['wheatSeeds', 'tomatoSeeds', 'carrotSeeds', 'eggplantSeeds'];
+              for (let s = 0; s < 2; s++) {
+                addReward(seedTypes[Math.floor(Math.random() * seedTypes.length)], 1);
+              }
             }
             else if (updatedCell.pendingAction === 'hunting_wolf') {
               newType = 'wolf';

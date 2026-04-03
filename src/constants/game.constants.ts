@@ -14,14 +14,14 @@ export const INITIAL_INVENTORY: Inventory = {
   tomato: 0, tomatoSeeds: 0,
   carrot: 0, carrotSeeds: 0,
   eggplant: 0, eggplantSeeds: 0,
-  fish: 0, planks: 0, bricks: 0,
+  fish: 0, berries: 0, planks: 0, bricks: 0,
   wildMeat: 0, iron: 0, copper: 0, gold: 0,
 };
 
 export const INITIAL_UNLOCKED: UnlockedBuildings = {
   house: false, animal_farm: false, lumber_mill: false, stone_mason: false,
   mine: false, port: false, village: false, city: false, county: false,
-  tree: false, forest: false, rock: false,
+  tree: false, forest: false, rock: false, bush: false,
 };
 
 export const GRID_SIZE = 8;
@@ -33,7 +33,7 @@ export const ACTION_TIMES = {
   building_house: 15000, building_mine: 10000, planting_tree: 5000, planting_forest: 10000,
   building_animal_farm: 15000, spawn_rock: 10000, building_village: 20000, building_city: 30000,
   building_county: 40000, building_lumber_mill: 12000, building_stone_mason: 12000,
-  building_port: 15000, crafting: 5000, hunting: 5000, hunting_wolf: 8000,
+  building_port: 15000, crafting: 5000, hunting: 5000, hunting_wolf: 8000, harvesting_bush: 3000, planting_bush: 5000,
 };
 
 export const COSTS = {
@@ -43,6 +43,7 @@ export const COSTS = {
   forest:       { coins: 300, stone: 5, farmers: 2 },
   animal_farm:  { wheat: 5, wood: 5, stone: 5, coins: 100, farmers: 2 },
   rock:         { coins: 50,  farmers: 1 },
+  bush:         { coins: 40,  farmers: 1 },
   village:      { coins: 100, farmers: 2 },
   city:         { coins: 500, farmers: 4 },
   county:       { coins: 2000, farmers: 8 },
