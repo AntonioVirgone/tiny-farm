@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BookMarked, Play } from 'lucide-react';
+import { BookMarked, Play, RefreshCw } from 'lucide-react';
 import TutorialModal from '../components/modals/TutorialModal';
 
 interface Props {
@@ -13,24 +13,25 @@ const StartScreen: React.FC<Props> = ({ hasSave, onNewGame, onLoadGame }) => {
 
   return (
     <div className="fullscreen-menu">
-      <h1>Fattoria Avanzata</h1>
+      <div className="start-logo">🌾</div>
+      <h1>Tiny Farm</h1>
+      <p className="subtitle">Village Builder</p>
       <p>
-        Espandi il tuo insediamento, estrai minerali preziosi, commercia nel mercato e affronta l'ignoto costruendo porti.
-        <br /><br />
-        <strong>Attenzione:</strong> Le tue decisioni contano. Il gioco include eventi casuali pericolosi. Se perdi tutti i tuoi cittadini, la partita terminerà!
+        Espandi il tuo insediamento, raccogli risorse, commercia nel mercato e affronta l'ignoto. Le tue decisioni contano — se perdi tutti i cittadini, è game over.
       </p>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', alignItems: 'center', width: '100%' }}>
+      <div className="fullscreen-menu settings-btn-group">
         {hasSave && (
-          <button className="btn-start" style={{ background: '#10b981' }} onClick={onLoadGame}>
-            <Play size={28} /> Continua Partita
+          <button className="btn-start" style={{ background: 'linear-gradient(135deg, #0891b2, #0e7490)' }} onClick={onLoadGame}>
+            <Play size={22} /> Continua Partita
           </button>
         )}
         <button className="btn-start" onClick={onNewGame}>
-          <Play size={28} /> {hasSave ? 'Nuova Partita' : 'Inizia Partita'}
+          {hasSave ? <RefreshCw size={22} /> : <Play size={22} />}
+          {hasSave ? 'Nuova Partita' : 'Inizia a Giocare'}
         </button>
-        <button className="btn-start" style={{ background: '#64748b' }} onClick={() => setShowTutorial(true)}>
-          <BookMarked size={28} /> Tutorial & Regole
+        <button className="btn-start" style={{ background: 'linear-gradient(135deg, #374151, #1f2937)', boxShadow: '0 8px 24px rgba(0,0,0,0.3)' }} onClick={() => setShowTutorial(true)}>
+          <BookMarked size={22} /> Tutorial & Regole
         </button>
       </div>
 

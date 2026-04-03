@@ -1,31 +1,34 @@
 import React from 'react';
-import { CloudFog, Moon } from 'lucide-react';
+import { Moon } from 'lucide-react';
 import GameCell from './GameCell';
 import type { Cell } from '../types/game.types';
 
 interface Props {
   grid: Cell[];
   reachableCells: Set<number>;
+  selectedCell: number | null;
   isNight: boolean;
   now: number;
   onCellClick: (cellId: number) => void;
 }
 
-const GameGrid: React.FC<Props> = ({ grid, reachableCells, isNight, now, onCellClick }) => (
+const GameGrid: React.FC<Props> = ({ grid, reachableCells, selectedCell, isNight, now, onCellClick }) => (
   <div className="grid-wrapper">
     <div className={`night-overlay ${isNight ? 'active' : ''}`}>
+      <div className="night-stars" />
       <div className="night-text">
-        <Moon size={48} color="#cbd5e1" />
+        <Moon size={44} color="#94a3b8" />
         Notte in corso...
       </div>
     </div>
     <div className="farming-grid">
       {grid.map(cell => {
         const isReachable = reachableCells.has(cell.id);
+        const isSelected = selectedCell === cell.id;
         return (
           <div
             key={cell.id}
-            className={`cell ${!isReachable ? 'fog' : cell.type} ${cell.busyUntil || cell.pendingAction ? 'busy' : ''}`}
+            className={`cell ${!isReachable ? 'fog' : cell.type} ${cell.busyUntil || cell.pendingAction ? 'busy' : ''} ${isSelected ? 'selected' : ''}`}
             onClick={() => {
               if (!cell.busyUntil && !cell.pendingAction && !isNight) {
                 onCellClick(cell.id);
@@ -33,7 +36,7 @@ const GameGrid: React.FC<Props> = ({ grid, reachableCells, isNight, now, onCellC
             }}
           >
             {!isReachable
-              ? <CloudFog size={28} color="#f8fafc" opacity={0.8} />
+              ? null
               : <GameCell cell={cell} now={now} />}
           </div>
         );
