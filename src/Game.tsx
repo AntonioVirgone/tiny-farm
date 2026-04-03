@@ -721,7 +721,7 @@ const Game: React.FC = () => {
       return;
     }
 
-    if (['plowing', 'chopping', 'mining', 'harvesting'].includes(action as string)) {
+    if (['plowing', 'chopping', 'mining', 'harvesting', 'harvesting_bush'].includes(action as string)) {
       const duration = ACTION_TIMES[action as keyof typeof ACTION_TIMES];
       setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers } : c));
       setActionsUsedToday(prev => prev + costFarmers);
