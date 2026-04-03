@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  Anchor, Axe, Castle, CloudFog, Coins, Crosshair, Factory,
+  Anchor, Axe, Castle, CloudFog, Coins, Crosshair, Dog, Factory,
   Home, Landmark, Mountain, PawPrint, Pickaxe, Rabbit,
   Ship, Skull, Sprout, Tent, Tractor, TreePine, Warehouse, X, Zap,
 } from 'lucide-react';
@@ -10,6 +10,7 @@ import type { ActionType, Cell, CropId, Inventory, UnlockedBuildings } from '../
 interface Props {
   cell: Cell;
   isReachable: boolean;
+  isAdjacentToWater: boolean;
   inventory: Inventory;
   unlocked: UnlockedBuildings;
   actionsLeft: number;
@@ -23,7 +24,7 @@ interface Props {
 }
 
 const CellActionModal: React.FC<Props> = ({
-  cell, isReachable, inventory, unlocked, actionsLeft, availableShips,
+  cell, isReachable, isAdjacentToWater, inventory, unlocked, actionsLeft, availableShips,
   totalPorts, baseFarmers, respawningCount,
   getMergeableCells, onAction, onClose,
 }) => {
@@ -49,6 +50,7 @@ const CellActionModal: React.FC<Props> = ({
       {cell.type === 'forest' && 'Bosco Rigoglioso'}
       {cell.type === 'rock' && 'Roccia Solida'}
       {cell.type === 'wild_animal' && 'Animali Selvatici'}
+      {cell.type === 'wolf' && 'Branco di Lupi!'}
       {cell.type === 'ready' && 'Raccolto Pronto!'}
       {cell.type === 'growing' && 'Coltura in crescita...'}
       {cell.type === 'mine' && 'Miniera Attiva'}
@@ -107,6 +109,24 @@ const CellActionModal: React.FC<Props> = ({
                 </div>
               )}
 
+              {cell.type === 'wolf' && (
+                <div style={{ textAlign: 'center', padding: '10px', color: '#64748b' }}>
+                  <Dog size={40} color="#0f172a" fill="#334155" style={{ margin: '0 auto 10px' }} />
+                  <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#1e293b' }}>
+                    {cell.wolfCount === 1 ? 'Lupo Solitario' : `Branco di Lupi: ${cell.wolfCount} / 10`}
+                  </div>
+                  <div style={{ fontSize: '13px', margin: '10px 0 20px' }}>
+                    I lupi si muovono di notte e cacciano i conigli. Pericolosi!
+                  </div>
+                  <button className="action-btn" style={{ background: '#7f1d1d', color: 'white' }} disabled={actionsLeft < 3} onClick={() => onAction(cell.id, 'hunting_wolf')}>
+                    <Crosshair size={20} /> Caccia al Lupo ({ACTION_TIMES.hunting_wolf / 1000}s)
+                    <span className="action-badge" style={{ background: actionsLeft >= 3 ? 'rgba(255,255,255,0.2)' : '#ef4444', padding: '4px 6px' }}>
+                      3<Zap size={10} style={{ display: 'inline', verticalAlign: 'middle' }} /> | 40% <Skull size={10} style={{ display: 'inline', verticalAlign: 'middle' }} />
+                    </span>
+                  </button>
+                </div>
+              )}
+
               {cell.type === 'water' && (
                 <div style={{ textAlign: 'center', padding: '10px', color: '#64748b' }}>
                   {totalPorts > 0 ? (
@@ -132,7 +152,7 @@ const CellActionModal: React.FC<Props> = ({
                   <button className="action-btn btn-plow" disabled={actionsLeft < 1} onClick={() => onAction(cell.id, 'plowing')}>
                     <Tractor size={20} /> Ara Terreno ({ACTION_TIMES.plowing / 1000}s)
                   </button>
-                  {unlocked.port && (
+                  {isAdjacentToWater && unlocked.port && (
                     <>
                       <button className="action-btn btn-port" disabled={actionsLeft < COSTS.port.farmers || !canBuildPort} onClick={() => onAction(cell.id, 'building_port')}>
                         <Anchor size={20} /> Costruisci Porto ({ACTION_TIMES.building_port / 1000}s)

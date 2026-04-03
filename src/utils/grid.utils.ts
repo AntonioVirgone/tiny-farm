@@ -35,12 +35,20 @@ export const generateInitialGrid = (): Cell[] => {
     if (type === 'grass') emptyGrassCells.push(i);
   }
 
-  for (let k = 0; k < 8; k++) {
+  for (let k = 0; k < 6; k++) {
     if (emptyGrassCells.length === 0) break;
     const randIndex = Math.floor(Math.random() * emptyGrassCells.length);
     const cellId = emptyGrassCells[randIndex];
     grid[cellId].type = 'wild_animal';
     grid[cellId].wildAnimalCount = 1;
+    emptyGrassCells.splice(randIndex, 1);
+  }
+
+  if (emptyGrassCells.length > 0) {
+    const randIndex = Math.floor(Math.random() * emptyGrassCells.length);
+    const cellId = emptyGrassCells[randIndex];
+    grid[cellId].type = 'wolf';
+    grid[cellId].wolfCount = 2;
     emptyGrassCells.splice(randIndex, 1);
   }
 

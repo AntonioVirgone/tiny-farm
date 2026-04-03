@@ -27,19 +27,16 @@ export const useVillageElder = () => {
       "Sei il saggio e antico Anziano del villaggio in un videogioco gestionale di agricoltura e costruzione città. " +
       "Il giocatore è il capo del villaggio che ha bisogno di un consiglio su cosa fare dopo. " +
       "Parla in prima persona, con un tono calmo, misterioso e molto immersivo (come in un gioco di ruolo). " +
-      "Analizza i dati che ti verranno forniti sull'inventario e sullo stato del villaggio e dai un singolo e breve consiglio strategico su quale dovrebbe essere il prossimo passo. " +
-      "Se il giocatore ha poche risorse di base (legna, pietra), suggerisci di raccoglierle. Se ha molte risorse, suggerisci di espandere costruendo case, villaggi, o esplorando il mare con un porto. " +
-      "Sii breve e conciso, massimo 2 o 3 frasi. Usa 1 o 2 emoji adatte per rendere il testo più carino.";
+      "Sii breve e conciso, massimo 2 o 3 frasi. Usa 1 o 2 emoji adatte.";
 
     const activeQuestIndex = params.allQuests.findIndex(q => !params.completedQuests.includes(q.id));
     const currentQuestStr = activeQuestIndex !== -1 ? params.allQuests[activeQuestIndex].title : 'Dominio totale';
 
     const userQuery =
-      `Giorno corrente: ${params.dayCount}. Popolazione totale: ${params.totalFarmers}. ` +
-      `Inventario attuale: Monete:${params.inventory.coins}, Legna:${params.inventory.wood}, Pietra:${params.inventory.stone}, Grano:${params.inventory.wheat}. ` +
-      `Flotta navale disponibile: ${params.availableShips}/${params.totalPorts}. ` +
-      `Obiettivo attuale del diario: ${currentQuestStr}. ` +
-      `Dammi il tuo consiglio saggio.`;
+      `Giorno: ${params.dayCount}. Popolazione: ${params.totalFarmers}. ` +
+      `Inventario: Monete:${params.inventory.coins}, Legna:${params.inventory.wood}, Pietra:${params.inventory.stone}. ` +
+      `Obiettivo attuale: ${currentQuestStr}. ` +
+      `Dammi un consiglio.`;
 
     const payload = {
       contents: [{ parts: [{ text: userQuery }] }],

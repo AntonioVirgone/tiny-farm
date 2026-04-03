@@ -179,6 +179,14 @@ export const useGameLoop = ({
               if (wildCount <= 0) { newType = 'grass'; updatedCell.wildAnimalCount = undefined; updatedCell.wildReproductionTargetTime = undefined; }
               else { updatedCell.wildAnimalCount = wildCount; }
             }
+            else if (updatedCell.pendingAction === 'hunting_wolf') {
+              newType = 'wolf';
+              let wolfCount = updatedCell.wolfCount || 1;
+              if (Math.random() * 100 < 40) newlyDeadFarmers += (Math.floor(Math.random() * 2) + 2);
+              else if (Math.random() * 100 < 70) { addReward('wildMeat', 2); wolfCount -= 1; }
+              if (wolfCount <= 0) { newType = 'grass'; updatedCell.wolfCount = undefined; }
+              else { updatedCell.wolfCount = wolfCount; }
+            }
 
             updatedCell = {
               ...updatedCell, type: newType, pendingAction: newPendingAction,

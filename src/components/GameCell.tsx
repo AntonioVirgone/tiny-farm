@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  Anchor, Castle, Droplets, Factory, Fish, Home, Landmark,
+  Anchor, Castle, Dog, Droplets, Factory, Fish, Home, Landmark,
   Mountain, Pickaxe, Rabbit, Sprout, Tent, TreePine, Warehouse,
 } from 'lucide-react';
 import AnimatedStickman from './AnimatedStickman';
@@ -109,7 +109,7 @@ const GameCell: React.FC<Props> = ({ cell, now }) => {
           {cell.pendingAction === 'building_port' && <Anchor size={24} color="#1e3a8a" />}
           {cell.pendingAction === 'crafting_planks' && <span>📦</span>}
           {cell.pendingAction === 'crafting_bricks' && <span>🧱</span>}
-          {cell.pendingAction === 'hunting' && <span>🎯</span>}
+          {(cell.pendingAction === 'hunting' || cell.pendingAction === 'hunting_wolf') && <span>🎯</span>}
           {isPassive && cell.cropType && React.createElement(CROPS[cell.cropType].icon, { size: 24, color: CROPS[cell.cropType].color })}
         </div>
         <div className="progress-bar-bg">
@@ -149,6 +149,16 @@ const GameCell: React.FC<Props> = ({ cell, now }) => {
         {cell.wildAnimalCount! > 1 && (
           <div style={{ position: 'absolute', bottom: -5, right: -5, background: 'white', borderRadius: '50%', padding: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 'bold', border: '1px solid #ccc', color: '#b45309', width: '16px', height: '16px' }}>
             {cell.wildAnimalCount}
+          </div>
+        )}
+      </div>
+    );
+    case 'wolf': return (
+      <div style={{ position: 'relative' }}>
+        <Dog size={28} color="#0f172a" fill="#334155" />
+        {cell.wolfCount! > 1 && (
+          <div style={{ position: 'absolute', bottom: -5, right: -5, background: 'white', borderRadius: '50%', padding: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 'bold', border: '1px solid #ccc', color: '#334155', width: '16px', height: '16px' }}>
+            {cell.wolfCount}
           </div>
         )}
       </div>

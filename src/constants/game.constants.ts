@@ -26,12 +26,14 @@ export const INITIAL_UNLOCKED: UnlockedBuildings = {
 
 export const GRID_SIZE = 8;
 
+export const BASE_INITIAL_FARMERS = 3;
+
 export const ACTION_TIMES = {
   plowing: 3000, planting: 2000, harvesting: 2000, chopping: 5000, mining: 8000,
   building_house: 15000, building_mine: 10000, planting_tree: 5000, planting_forest: 10000,
   building_animal_farm: 15000, spawn_rock: 10000, building_village: 20000, building_city: 30000,
   building_county: 40000, building_lumber_mill: 12000, building_stone_mason: 12000,
-  building_port: 15000, crafting: 5000, hunting: 5000,
+  building_port: 15000, crafting: 5000, hunting: 5000, hunting_wolf: 8000,
 };
 
 export const COSTS = {

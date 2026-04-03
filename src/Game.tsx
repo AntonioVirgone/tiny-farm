@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { onAuthStateChanged, signInAnonymously, signInWithCustomToken } from 'firebase/auth';
 
-import { auth } from './config/firebase';
-import { ACTION_TIMES, COSTS, CROPS, INITIAL_INVENTORY, INITIAL_UNLOCKED } from './constants/game.constants';
+import { auth, db, appId } from './config/firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import { ACTION_TIMES, BASE_INITIAL_FARMERS, COSTS, CROPS, INITIAL_INVENTORY, INITIAL_UNLOCKED } from './constants/game.constants';
 import { useGameEvents } from './hooks/useGameEvents';
 import { useGameLoop } from './hooks/useGameLoop';
 import { useSave } from './hooks/useSave';
@@ -97,6 +98,7 @@ const GAME_CSS = `
   .cell.plowed { background: repeating-linear-gradient(180deg, #92400e, #92400e 20%, #78350f 20%, #78350f 25%); }
   .cell.water { background: #0ea5e9; box-shadow: inset 0 0 10px rgba(2, 132, 199, 0.5); }
   .cell.wild_animal { background: #86efac; }
+  .cell.wolf { background: #e2e8f0; box-shadow: inset 0 0 10px rgba(0,0,0,0.2); }
 
   .progress-container { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; height: 100%; }
   .progress-bar-bg { position: absolute; bottom: 4px; width: 80%; height: 6px; background: rgba(0,0,0,0.3); border-radius: 4px; overflow: hidden; border: 1px solid rgba(255,255,255,0.2); z-index: 20; }
@@ -219,7 +221,7 @@ const Game: React.FC = () => {
 
   // --- DERIVED STATE ---
   const totalPorts = grid.filter(c => c.type === 'port').length;
-  const baseFarmers =
+  const baseFarmers = BASE_INITIAL_FARMERS +
     grid.filter(c => c.type === 'house').length * 1 +
     grid.filter(c => c.type === 'village').length * 6 +
     grid.filter(c => c.type === 'city').length * 30 +
@@ -349,14 +351,22 @@ const Game: React.FC = () => {
       let gridChanged = false;
       const movedTo = new Set<number>();
 
+      const getNeighbors = (i: number) => {
+        const n = [];
+        if (i >= 8) n.push(i - 8);
+        if (i < 56) n.push(i + 8);
+        if (i % 8 !== 0) n.push(i - 1);
+        if ((i + 1) % 8 !== 0) n.push(i + 1);
+        return n;
+      };
+
+      const getWolvesPos = () => newGrid.map((c, idx) => c.type === 'wolf' ? idx : -1).filter(idx => idx !== -1);
+
+      // 1. MOVIMENTO E FUGA CONIGLI
       for (let i = 0; i < newGrid.length; i++) {
         const cell = newGrid[i];
         if (cell.type === 'wild_animal' && !movedTo.has(i) && !cell.busyUntil && cell.pendingAction === null) {
-          const neighbors = [];
-          if (i >= 8) neighbors.push(i - 8);
-          if (i < 56) neighbors.push(i + 8);
-          if (i % 8 !== 0) neighbors.push(i - 1);
-          if ((i + 1) % 8 !== 0) neighbors.push(i + 1);
+          const neighbors = getNeighbors(i);
 
           const mergeTarget = neighbors.find(n => newGrid[n].type === 'wild_animal' && !movedTo.has(n));
           if (mergeTarget !== undefined) {
@@ -369,10 +379,84 @@ const Game: React.FC = () => {
 
           const validGrass = neighbors.filter(n => newGrid[n].type === 'grass' && !newGrid[n].busyUntil && newGrid[n].pendingAction === null);
           if (validGrass.length > 0) {
-            const target = validGrass[Math.floor(Math.random() * validGrass.length)];
+            const currentWolves = getWolvesPos();
+            let target = validGrass[Math.floor(Math.random() * validGrass.length)];
+            if (currentWolves.length > 0) {
+              let bestTiles = [target];
+              let maxMinDist = -1;
+              for (const move of validGrass) {
+                let minDistToWolf = 999;
+                for (const w of currentWolves) {
+                  const dist = Math.abs((w % 8) - (move % 8)) + Math.abs(Math.floor(w / 8) - Math.floor(move / 8));
+                  if (dist < minDistToWolf) minDistToWolf = dist;
+                }
+                if (minDistToWolf > maxMinDist) { maxMinDist = minDistToWolf; bestTiles = [move]; }
+                else if (minDistToWolf === maxMinDist) bestTiles.push(move);
+              }
+              target = bestTiles[Math.floor(Math.random() * bestTiles.length)];
+            }
             newGrid[target] = { ...newGrid[target], type: 'wild_animal', wildAnimalCount: cell.wildAnimalCount, wildReproductionTargetTime: cell.wildReproductionTargetTime };
             newGrid[i] = { ...newGrid[i], type: 'grass', wildAnimalCount: undefined, wildReproductionTargetTime: undefined };
             movedTo.add(target); movedTo.add(i); gridChanged = true;
+          }
+        }
+      }
+
+      // 2. MOVIMENTO E CACCIA LUPI (ogni 3 notti)
+      if (dayCount % 2 === 0) {
+        for (let i = 0; i < newGrid.length; i++) {
+          const cell = newGrid[i];
+          if (cell.type === 'wolf' && !movedTo.has(i) && !cell.busyUntil && cell.pendingAction === null) {
+            const neighbors = getNeighbors(i);
+
+            // Attacca conigli adiacenti
+            const adjRabbits = neighbors.filter(n => newGrid[n].type === 'wild_animal');
+            if (adjRabbits.length > 0) {
+              const targetRabbit = adjRabbits[0];
+              const rCount = newGrid[targetRabbit].wildAnimalCount || 1;
+              const wCount = cell.wolfCount || 1;
+              if (wCount >= rCount) {
+                newGrid[targetRabbit] = { ...newGrid[targetRabbit], type: 'grass', wildAnimalCount: undefined, wildReproductionTargetTime: undefined };
+              } else {
+                newGrid[targetRabbit] = { ...newGrid[targetRabbit], wildAnimalCount: rCount - 1 };
+              }
+              movedTo.add(i); gridChanged = true;
+              continue;
+            }
+
+            // Fusione lupi
+            const mergeTarget = neighbors.find(n => newGrid[n].type === 'wolf' && !movedTo.has(n));
+            if (mergeTarget !== undefined) {
+              const totalCount = Math.min(10, (cell.wolfCount || 1) + (newGrid[mergeTarget].wolfCount || 1));
+              newGrid[mergeTarget] = { ...newGrid[mergeTarget], wolfCount: totalCount };
+              newGrid[i] = { ...newGrid[i], type: 'grass', wolfCount: undefined };
+              movedTo.add(mergeTarget); movedTo.add(i); gridChanged = true;
+              continue;
+            }
+
+            // Movimento verso conigli
+            const validGrass = neighbors.filter(n => newGrid[n].type === 'grass' && !newGrid[n].busyUntil && newGrid[n].pendingAction === null);
+            if (validGrass.length > 0) {
+              const currentRabbits = newGrid.map((c, idx) => c.type === 'wild_animal' ? idx : -1).filter(idx => idx !== -1);
+              let target = validGrass[Math.floor(Math.random() * validGrass.length)];
+              if (currentRabbits.length > 0) {
+                let bestTiles = [target];
+                let minMinDist = 999;
+                for (const move of validGrass) {
+                  let minDistToRabbit = 999;
+                  for (const r of currentRabbits) {
+                    const dist = Math.abs((r % 8) - (move % 8)) + Math.abs(Math.floor(r / 8) - Math.floor(move / 8));
+                    if (dist < minDistToRabbit) minDistToRabbit = dist;
+                  }
+                  if (minDistToRabbit < minMinDist) { minMinDist = minDistToRabbit; bestTiles = [move]; }
+                  else if (minDistToRabbit === minMinDist) bestTiles.push(move);
+                }
+                target = bestTiles[Math.floor(Math.random() * bestTiles.length)];
+              }
+              newGrid[target] = { ...newGrid[target], type: 'wolf', wolfCount: cell.wolfCount };
+              newGrid[i] = { ...newGrid[i], type: 'grass', wolfCount: undefined };
+              movedTo.add(target); movedTo.add(i); gridChanged = true;
+            }
           }
         }
       }
@@ -411,11 +495,11 @@ const Game: React.FC = () => {
 
       return gridChanged ? newGrid : prevGrid;
     });
-  }, [isNight, gameState]);
+  }, [isNight, gameState, dayCount]);
 
   // --- HOOKS ---
   useGameLoop({ gameState, setGrid, setInventory, setNow, setRespawningFarmers, respawningRef });
-  useGameEvents({ gameState, gridRef, respawningRef, setRespawningFarmers, setToasts });
+  useGameEvents({ gameState, gridRef, respawningRef, setGrid, setRespawningFarmers, setToasts });
 
   const { handleSaveGame, handleLoadGame, handleExportSave, handleImportSave } = useSave({
     gameState, user, stateRef, isSaving, setIsSaving, setHasSave, setToasts,
@@ -425,11 +509,23 @@ const Game: React.FC = () => {
 
   const { showElderModal, setShowElderModal, elderMessage, isElderThinking, askVillageElder } = useVillageElder();
 
-  // --- CHECK SAVE ON LOAD ---
+  // --- CHECK SAVE ON LOAD (locale + cloud) ---
   useEffect(() => {
     const localSave = localStorage.getItem('fattoria_avanzata_save');
     if (localSave) setHasSave(true);
-  }, []);
+
+    if (!user || !db) return;
+    const checkCloudSave = async () => {
+      try {
+        const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'savegame', 'data');
+        const snap = await getDoc(docRef);
+        if (snap.exists()) setHasSave(true);
+      } catch (e) {
+        console.error('Check Save Error', e);
+      }
+    };
+    checkCloudSave();
+  }, [user]);
 
   // --- ACTIONS ---
   const startNewGame = () => {
@@ -476,6 +572,7 @@ const Game: React.FC = () => {
 
     let costFarmers = 1;
     if (action === 'hunting') costFarmers = 2;
+    else if (action === 'hunting_wolf') costFarmers = 3;
     else if (action === 'start_active_forest') costFarmers = 3;
     else if (action?.startsWith('building_')) costFarmers = COSTS[action.replace('building_', '') as keyof typeof COSTS]?.farmers || 1;
     else if (action === 'planting_tree') costFarmers = COSTS.tree.farmers;
@@ -493,6 +590,13 @@ const Game: React.FC = () => {
 
     if (action === 'hunting') {
       setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + ACTION_TIMES.hunting, busyTotalDuration: ACTION_TIMES.hunting, pendingAction: action, farmersUsed: costFarmers } : c));
+      setActionsUsedToday(prev => prev + costFarmers);
+      setSelectedCell(null);
+      return;
+    }
+
+    if (action === 'hunting_wolf') {
+      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + ACTION_TIMES.hunting_wolf, busyTotalDuration: ACTION_TIMES.hunting_wolf, pendingAction: action, farmersUsed: costFarmers } : c));
       setActionsUsedToday(prev => prev + costFarmers);
       setSelectedCell(null);
       return;
@@ -653,6 +757,14 @@ const Game: React.FC = () => {
   const activeCell = selectedCell !== null ? grid.find(c => c.id === selectedCell) : null;
   const isReachable = activeCell ? reachableCells.has(activeCell.id) : false;
 
+  const isAdjacentToWater = activeCell
+    ? [activeCell.id - 8, activeCell.id + 8,
+       activeCell.id % 8 !== 0 ? activeCell.id - 1 : -1,
+       (activeCell.id + 1) % 8 !== 0 ? activeCell.id + 1 : -1]
+        .filter(n => n >= 0 && n < 64)
+        .some(n => grid[n].type === 'water')
+    : false;
+
   return (
     <div className="game-container">
       <input type="file" accept=".json" ref={fileInputRef} onChange={handleImportSave} style={{ display: 'none' }} />
@@ -726,6 +838,7 @@ const Game: React.FC = () => {
         <CellActionModal
           cell={activeCell}
           isReachable={isReachable}
+          isAdjacentToWater={isAdjacentToWater}
           inventory={inventory}
           unlocked={unlocked}
           actionsLeft={actionsLeft}
