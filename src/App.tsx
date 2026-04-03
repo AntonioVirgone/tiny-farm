@@ -1,4 +1,3 @@
-// @ts-nocheck - File di base per nuove funzionalità (non in produzione)
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Coins, TreePine, Mountain, Axe, Pickaxe,
@@ -7,7 +6,7 @@ import {
   Droplets, Fish, Factory, Box, Layers, Rabbit, Crosshair, Bone, Gem,
   Ship, Anchor, Lock, Castle, Landmark, Skull, CloudFog, Package,
   BookMarked, CheckCircle, AlertTriangle, Play, Leaf, Save, Info, Download, Upload,
-  Settings, LogOut, Sun, Moon, CalendarDays, Zap, Sparkles
+  Settings, LogOut, Sun, Moon, CalendarDays, Zap, Sparkles, Dog
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
@@ -63,8 +62,8 @@ const CROPS: Record<CropId, CropConfig> = {
   eggplant: { id: 'eggplant', name: 'Melanzana', seedCost: 70, growthTime: 35000, minYield: 2, maxYield: 5, minSeeds: 0, maxSeeds: 2, sellPrice: 120, icon: Leaf, color: '#481570' }
 };
 
-type CellType = 'grass' | 'water' | 'plowed' | 'growing' | 'ready' | 'tree' | 'forest' | 'rock' | 'house' | 'mine' | 'animal_farm' | 'village' | 'city' | 'county' | 'lumber_mill' | 'stone_mason' | 'wild_animal' | 'port';
-type ActionType = 'plowing' | 'chopping' | 'mining' | 'building_house' | 'building_mine' | 'building_animal_farm' | 'planting_tree' | 'planting_forest' | 'building_village' | 'building_city' | 'building_county' | 'building_lumber_mill' | 'building_stone_mason' | 'building_port' | 'active_mine' | 'active_forest' | 'harvesting' | 'growing' | 'fishing' | 'hunting' | 'crafting_planks' | 'crafting_bricks' | 'spawn_rock' | 'start_active_forest' | string | null;
+type CellType = 'grass' | 'water' | 'plowed' | 'growing' | 'ready' | 'tree' | 'forest' | 'rock' | 'house' | 'mine' | 'animal_farm' | 'village' | 'city' | 'county' | 'lumber_mill' | 'stone_mason' | 'wild_animal' | 'wolf' | 'port';
+type ActionType = 'plowing' | 'chopping' | 'mining' | 'building_house' | 'building_mine' | 'building_animal_farm' | 'planting_tree' | 'planting_forest' | 'building_village' | 'building_city' | 'building_county' | 'building_lumber_mill' | 'building_stone_mason' | 'building_port' | 'active_mine' | 'active_forest' | 'harvesting' | 'growing' | 'fishing' | 'hunting' | 'hunting_wolf' | 'crafting_planks' | 'crafting_bricks' | 'spawn_rock' | 'start_active_forest' | string | null;
 
 interface Inventory {
   coins: number; wood: number; stone: number; wheat: number; wheatSeeds: number;
@@ -84,6 +83,7 @@ interface Cell {
   pendingAction: ActionType; farmersUsed?: number; mineTicks?: number; forestTicks?: number;
   lastTickTime?: number; animalCount?: number; reproductionTargetTime?: number | null;
   fishingTicks?: number; wildAnimalCount?: number; wildReproductionTargetTime?: number | null;
+  wolfCount?: number;
 }
 
 const INITIAL_INVENTORY: Inventory = {
@@ -98,12 +98,13 @@ const INITIAL_UNLOCKED: UnlockedBuildings = {
 };
 
 const GRID_SIZE = 8;
+const BASE_INITIAL_FARMERS = 3; // Bonus cittadini iniziali (es. il giocatore e la sua famiglia)
 const ACTION_TIMES = {
   plowing: 3000, planting: 2000, harvesting: 2000, chopping: 5000, mining: 8000,
   building_house: 15000, building_mine: 10000, planting_tree: 5000, planting_forest: 10000,
   building_animal_farm: 15000, spawn_rock: 10000, building_village: 20000, building_city: 30000,
   building_county: 40000, building_lumber_mill: 12000, building_stone_mason: 12000,
-  building_port: 15000, crafting: 5000, hunting: 5000
+  building_port: 15000, crafting: 5000, hunting: 5000, hunting_wolf: 8000
 };
 
 const COSTS = {
@@ -122,7 +123,7 @@ const AnimatedStickman = ({ action }: { action: ActionType }) => {
   if (!action) return null;
   const isStriking = ['chopping', 'mining', 'spawn_rock', 'active_forest'].includes(action) || action.startsWith('building_');
   const isFarming = ['plowing', 'harvesting', 'crafting_planks', 'crafting_bricks'].includes(action) || action.startsWith('planting_');
-  const isHunting = action === 'hunting';
+  const isHunting = action === 'hunting' || action === 'hunting_wolf';
 
   return (
       <svg viewBox="0 0 100 100" style={{ width: '42px', height: '42px', position: 'absolute', top: '0', zIndex: 10, pointerEvents: 'none' }}>
@@ -202,7 +203,8 @@ const generateInitialGrid = (): Cell[] => {
     if (type === 'grass') emptyGrassCells.push(i);
   }
 
-  for (let k = 0; k < 8; k++) {
+  // Genera Conigli
+  for (let k = 0; k < 6; k++) {
     if (emptyGrassCells.length === 0) break;
     const randIndex = Math.floor(Math.random() * emptyGrassCells.length);
     const cellId = emptyGrassCells[randIndex];
@@ -210,6 +212,15 @@ const generateInitialGrid = (): Cell[] => {
     grid[cellId].wildAnimalCount = 1;
     emptyGrassCells.splice(randIndex, 1);
   }
+
+  // Genera un branco di lupi iniziale
+  if (emptyGrassCells.length > 0) {
+    const randIndex = Math.floor(Math.random() * emptyGrassCells.length);
+    const cellId = emptyGrassCells[randIndex];
+    grid[cellId].type = 'wolf';
+    grid[cellId].wolfCount = 2;
+  }
+
   return grid;
 };
 
@@ -291,7 +302,7 @@ const App: React.FC = () => {
 
   // --- CALCOLO COSTANTE CITTADINI E AZIONI ---
   const totalPorts = grid.filter(c => c.type === 'port').length;
-  const baseFarmers =
+  const baseFarmers = BASE_INITIAL_FARMERS +
       grid.filter(c => c.type === 'house').length * 1 +
       grid.filter(c => c.type === 'village').length * 6 +
       grid.filter(c => c.type === 'city').length * 30 +
@@ -327,19 +338,16 @@ const App: React.FC = () => {
         "Sei il saggio e antico Anziano del villaggio in un videogioco gestionale di agricoltura e costruzione città. " +
         "Il giocatore è il capo del villaggio che ha bisogno di un consiglio su cosa fare dopo. " +
         "Parla in prima persona, con un tono calmo, misterioso e molto immersivo (come in un gioco di ruolo). " +
-        "Analizza i dati che ti verranno forniti sull'inventario e sullo stato del villaggio e dai un singolo e breve consiglio strategico su quale dovrebbe essere il prossimo passo. " +
-        "Se il giocatore ha poche risorse di base (legna, pietra), suggerisci di raccoglierle. Se ha molte risorse, suggerisci di espandere costruendo case, villaggi, o esplorando il mare con un porto. " +
-        "Sii breve e conciso, massimo 2 o 3 frasi. Usa 1 o 2 emoji adatte per rendere il testo più carino.";
+        "Sii breve e conciso, massimo 2 o 3 frasi. Usa 1 o 2 emoji adatte.";
 
     const activeQuestIndex = ALL_QUESTS.findIndex(q => !completedQuests.includes(q.id));
     const currentQuestStr = activeQuestIndex !== -1 ? ALL_QUESTS[activeQuestIndex].title : "Dominio totale";
 
     const userQuery =
-        `Giorno corrente: ${dayCount}. Popolazione totale: ${totalFarmers}. ` +
-        `Inventario attuale: Monete:${inventory.coins}, Legna:${inventory.wood}, Pietra:${inventory.stone}, Grano:${inventory.wheat}. ` +
-        `Flotta navale disponibile: ${availableShips}/${totalPorts}. ` +
-        `Obiettivo attuale del diario: ${currentQuestStr}. ` +
-        `Dammi il tuo consiglio saggio.`;
+        `Giorno: ${dayCount}. Popolazione: ${totalFarmers}. ` +
+        `Inventario: Monete:${inventory.coins}, Legna:${inventory.wood}, Pietra:${inventory.stone}. ` +
+        `Obiettivo attuale: ${currentQuestStr}. ` +
+        `Dammi un consiglio.`;
 
     const payload = {
       contents: [{ parts: [{ text: userQuery }] }],
@@ -421,7 +429,6 @@ const App: React.FC = () => {
       }
     }
 
-    // Fallback al localStorage se non trovato o cloud in errore
     if (!loadedData) {
       const localSave = localStorage.getItem('fattoria_avanzata_save');
       if (localSave) {
@@ -488,16 +495,13 @@ const App: React.FC = () => {
     return () => clearInterval(autoSaveInterval);
   }, [gameState, user]);
 
-  // --- TRANSIZIONE GIORNO/NOTTE E FIX BUG CONTADINI BLOCCATI ---
   const endDay = () => {
     setIsNight(true);
     setSelectedCell(null);
 
-    // FIX: Avanza istantaneamente il tempo per tutti i lavori fisici pendenti quando cala la notte!
-    // Questo evita che i contadini restino "congelati" nell'azione il giorno successivo.
     setGrid(prev => prev.map(c => {
       if (c.busyUntil && c.pendingAction !== 'fishing' && c.pendingAction !== 'active_forest' && c.pendingAction !== 'active_mine' && c.pendingAction !== 'growing') {
-        return { ...c, busyUntil: Date.now() }; // Imposta il completamento ad ora (fast-forward)
+        return { ...c, busyUntil: Date.now() };
       }
       return c;
     }));
@@ -509,7 +513,6 @@ const App: React.FC = () => {
     }, 5000);
   };
 
-  // Auto-Notte: Ora aspetta che non ci siano cittadini impegnati in lavori manuali
   useEffect(() => {
     if (actionsLeft <= 0 && busyFarmers === 0 && !isNight && totalFarmers > 0 && gameState === 'playing') {
       const t = setTimeout(() => { endDay(); }, 1500);
@@ -523,7 +526,7 @@ const App: React.FC = () => {
       const currentGrid = gridRef.current;
       const currentRespawning = respawningRef.current;
       const currentPorts = currentGrid.filter(c => c.type === 'port').length;
-      const currentBaseFarmers =
+      const currentBaseFarmers = BASE_INITIAL_FARMERS +
           currentGrid.filter(c => c.type === 'house').length * 1 +
           currentGrid.filter(c => c.type === 'village').length * 6 +
           currentGrid.filter(c => c.type === 'city').length * 30 +
@@ -534,20 +537,32 @@ const App: React.FC = () => {
 
       let eventTriggered = false; let eventMessage = "";
       const diseaseProb = Math.min(0.90, 0.05 + (currentTotalFarmers - 1) * 0.0447);
-      const hasWildAnimals = currentGrid.some(c => c.type === 'wild_animal');
-      const wolvesProb = !hasWildAnimals ? 0.40 : 0;
       const banditsProb = currentPorts > 0 ? 0.30 : 0;
+
+      // I lupi non attaccano più a caso la fattoria come prima, ora spawnano fisicamente!
+      const wolfSpawnProb = 0.25;
 
       if (Math.random() < diseaseProb) {
         eventTriggered = true; eventMessage = "Un'improvvisa malattia ha colpito un cittadino!";
-      } else if (wolvesProb > 0 && Math.random() < wolvesProb) {
-        eventTriggered = true; eventMessage = "Senza più prede nella foresta, i lupi hanno attaccato la fattoria!";
+        setRespawningFarmers(prev => [...prev, Date.now() + 40000]);
+      } else if (Math.random() < wolfSpawnProb) {
+        // Spawn di un nuovo branco di lupi su erba vuota
+        const emptyGrass = currentGrid.map((c, i) => c.type === 'grass' && !c.busyUntil && c.pendingAction === null ? i : -1).filter(i => i !== -1);
+        if (emptyGrass.length > 0) {
+          const target = emptyGrass[Math.floor(Math.random() * emptyGrass.length)];
+          setGrid(prev => {
+            const next = [...prev];
+            next[target] = { ...next[target], type: 'wolf', wolfCount: 1 };
+            return next;
+          });
+          eventTriggered = true; eventMessage = "Dei lupi affamati sono scesi dalle montagne!";
+        }
       } else if (banditsProb > 0 && Math.random() < banditsProb) {
         eventTriggered = true; eventMessage = "Dei banditi giunti via mare hanno assalito l'insediamento!";
+        setRespawningFarmers(prev => [...prev, Date.now() + 40000]);
       }
 
       if (eventTriggered) {
-        setRespawningFarmers(prev => [...prev, Date.now() + 40000]);
         const eventId = 'evt-' + Date.now();
         setToasts(prev => [...prev, { id: eventId, title: eventMessage, type: 'danger' }]);
         setTimeout(() => { setToasts(prev => prev.filter(t => t.id !== eventId)); }, 5000);
@@ -556,70 +571,147 @@ const App: React.FC = () => {
     return () => clearInterval(eventInterval);
   }, [gameState]);
 
-  // --- EVENTI NOTTURNI (Movimento, Spawn Alberi, Auto-Merge Foresta) ---
+  // --- EVENTI NOTTURNI (Movimento Conigli, Lupi, Alberi) ---
   useEffect(() => {
     if (isNight && gameState === 'playing') {
       setGrid(prevGrid => {
         let newGrid = [...prevGrid];
         let gridChanged = false;
 
-        // 1. MOVIMENTO E FUSIONE ANIMALI
+        const getNeighbors = (i: number) => {
+          const n = [];
+          if (i >= 8) n.push(i - 8);
+          if (i < 56) n.push(i + 8);
+          if (i % 8 !== 0) n.push(i - 1);
+          if ((i + 1) % 8 !== 0) n.push(i + 1);
+          return n;
+        };
+
         const movedTo = new Set<number>();
+        const getWolvesPos = () => newGrid.map((c, i) => c.type === 'wolf' ? i : -1).filter(i => i !== -1);
+
+        // 1. MOVIMENTO E FUGA CONIGLI
         for (let i = 0; i < newGrid.length; i++) {
           const cell = newGrid[i];
           if (cell.type === 'wild_animal' && !movedTo.has(i) && !cell.busyUntil && cell.pendingAction === null) {
-            const neighbors = [];
-            if (i >= 8) neighbors.push(i - 8);
-            if (i < 56) neighbors.push(i + 8);
-            if (i % 8 !== 0) neighbors.push(i - 1);
-            if ((i + 1) % 8 !== 0) neighbors.push(i + 1);
+            const neighbors = getNeighbors(i);
 
-            // Controlla fusione
+            // FUSIONE CONIGLI
             const mergeTarget = neighbors.find(n => newGrid[n].type === 'wild_animal' && !movedTo.has(n));
-
             if (mergeTarget !== undefined) {
               const totalCount = Math.min(10, (cell.wildAnimalCount || 1) + (newGrid[mergeTarget].wildAnimalCount || 1));
-              newGrid[mergeTarget] = {
-                ...newGrid[mergeTarget],
-                wildAnimalCount: totalCount
-              };
-              newGrid[i] = {
-                ...newGrid[i],
-                type: 'grass',
-                wildAnimalCount: undefined,
-                wildReproductionTargetTime: undefined
-              };
-              movedTo.add(mergeTarget);
-              movedTo.add(i);
-              gridChanged = true;
+              newGrid[mergeTarget] = { ...newGrid[mergeTarget], wildAnimalCount: totalCount };
+              newGrid[i] = { ...newGrid[i], type: 'grass', wildAnimalCount: undefined, wildReproductionTargetTime: undefined };
+              movedTo.add(mergeTarget); movedTo.add(i); gridChanged = true;
               continue;
             }
 
-            // Movimento semplice
+            // MOVIMENTO / FUGA (Fugge dai lupi se presenti)
             const validGrass = neighbors.filter(n => newGrid[n].type === 'grass' && !newGrid[n].busyUntil && newGrid[n].pendingAction === null);
-
             if (validGrass.length > 0) {
-              const target = validGrass[Math.floor(Math.random() * validGrass.length)];
-              newGrid[target] = {
-                ...newGrid[target],
-                type: 'wild_animal',
-                wildAnimalCount: cell.wildAnimalCount,
-                wildReproductionTargetTime: cell.wildReproductionTargetTime
-              };
-              newGrid[i] = {
-                ...newGrid[i],
-                type: 'grass',
-                wildAnimalCount: undefined,
-                wildReproductionTargetTime: undefined
-              };
-              movedTo.add(target);
-              movedTo.add(i);
-              gridChanged = true;
+              const currentWolves = getWolvesPos();
+              let target = validGrass[Math.floor(Math.random() * validGrass.length)]; // default random
+
+              if (currentWolves.length > 0) {
+                // Cerca la casella d'erba che massimizza la distanza dal lupo più vicino
+                let bestTiles = [target];
+                let maxMinDist = -1;
+                for (let move of validGrass) {
+                  let minDistToWolf = 999;
+                  for (let w of currentWolves) {
+                    const dist = Math.abs((w%8) - (move%8)) + Math.abs(Math.floor(w/8) - Math.floor(move/8));
+                    if (dist < minDistToWolf) minDistToWolf = dist;
+                  }
+                  if (minDistToWolf > maxMinDist) {
+                    maxMinDist = minDistToWolf;
+                    bestTiles = [move];
+                  } else if (minDistToWolf === maxMinDist) {
+                    bestTiles.push(move);
+                  }
+                }
+                target = bestTiles[Math.floor(Math.random() * bestTiles.length)];
+              }
+
+              newGrid[target] = { ...newGrid[target], type: 'wild_animal', wildAnimalCount: cell.wildAnimalCount, wildReproductionTargetTime: cell.wildReproductionTargetTime };
+              newGrid[i] = { ...newGrid[i], type: 'grass', wildAnimalCount: undefined, wildReproductionTargetTime: undefined };
+              movedTo.add(target); movedTo.add(i); gridChanged = true;
             }
           }
         }
 
-        // 2. SPAWN NUOVI ALBERI (da 1 a 3 alberi a notte)
+        // 2. MOVIMENTO E CACCIA LUPI (Ogni 3 notti)
+        if (dayCount % 3 === 0) {
+          for (let i = 0; i < newGrid.length; i++) {
+            const cell = newGrid[i];
+            if (cell.type === 'wolf' && !movedTo.has(i) && !cell.busyUntil && cell.pendingAction === null) {
+              const neighbors = getNeighbors(i);
+
+              // CONTROLLA SE CI SONO CONIGLI ADIACENTI
+              const adjRabbits = neighbors.filter(n => newGrid[n].type === 'wild_animal');
+              if (adjRabbits.length > 0) {
+                const targetRabbit = adjRabbits[0]; // Attacca il primo
+                const rCount = newGrid[targetRabbit].wildAnimalCount || 1;
+                const wCount = cell.wolfCount || 1;
+
+                if (wCount >= rCount) {
+                  // Lupi divorano tutto il branco di conigli
+                  newGrid[targetRabbit] = { ...newGrid[targetRabbit], type: 'grass', wildAnimalCount: undefined, wildReproductionTargetTime: undefined };
+                } else {
+                  // Muore solo 1 coniglio
+                  newGrid[targetRabbit] = { ...newGrid[targetRabbit], wildAnimalCount: rCount - 1 };
+                }
+
+                // I lupi non si muovono se hanno appena banchettato
+                movedTo.add(i);
+                gridChanged = true;
+                continue;
+              }
+
+              // FUSIONE LUPI
+              const mergeTarget = neighbors.find(n => newGrid[n].type === 'wolf' && !movedTo.has(n));
+              if (mergeTarget !== undefined) {
+                const totalCount = Math.min(10, (cell.wolfCount || 1) + (newGrid[mergeTarget].wolfCount || 1));
+                newGrid[mergeTarget] = { ...newGrid[mergeTarget], wolfCount: totalCount };
+                newGrid[i] = { ...newGrid[i], type: 'grass', wolfCount: undefined };
+                movedTo.add(mergeTarget); movedTo.add(i); gridChanged = true;
+                continue;
+              }
+
+              // MOVIMENTO VERSO I CONIGLI
+              const validGrass = neighbors.filter(n => newGrid[n].type === 'grass' && !newGrid[n].busyUntil && newGrid[n].pendingAction === null);
+              if (validGrass.length > 0) {
+                const currentRabbits = newGrid.map((c, idx) => c.type === 'wild_animal' ? idx : -1).filter(idx => idx !== -1);
+                let target = validGrass[Math.floor(Math.random() * validGrass.length)]; // random di default
+
+                if (currentRabbits.length > 0) {
+                  // Cerca la casella d'erba che MINIMIZZA la distanza dal coniglio più vicino
+                  let bestTiles = [target];
+                  let minMinDist = 999;
+                  for (let move of validGrass) {
+                    let minDistToRabbit = 999;
+                    for (let r of currentRabbits) {
+                      const dist = Math.abs((r%8) - (move%8)) + Math.abs(Math.floor(r/8) - Math.floor(move/8));
+                      if (dist < minDistToRabbit) minDistToRabbit = dist;
+                    }
+                    if (minDistToRabbit < minMinDist) {
+                      minMinDist = minDistToRabbit;
+                      bestTiles = [move];
+                    } else if (minDistToRabbit === minMinDist) {
+                      bestTiles.push(move);
+                    }
+                  }
+                  target = bestTiles[Math.floor(Math.random() * bestTiles.length)];
+                }
+
+                newGrid[target] = { ...newGrid[target], type: 'wolf', wolfCount: cell.wolfCount };
+                newGrid[i] = { ...newGrid[i], type: 'grass', wolfCount: undefined };
+                movedTo.add(target); movedTo.add(i); gridChanged = true;
+              }
+            }
+          }
+        }
+
+        // 3. SPAWN NUOVI ALBERI (da 1 a 3 alberi a notte)
         const emptyGrass = newGrid.map((c, idx) => c.type === 'grass' && !c.busyUntil && c.pendingAction === null ? idx : -1).filter(idx => idx !== -1);
         if (emptyGrass.length > 0) {
           const spawnCount = Math.floor(Math.random() * 3) + 1; // 1-3 alberi
@@ -633,21 +725,15 @@ const App: React.FC = () => {
           }
         }
 
-        // 3. AUTO-MERGE ALBERI IN FORESTA (2x2)
+        // 4. AUTO-MERGE ALBERI IN FORESTA (2x2)
         for (let i = 0; i < newGrid.length; i++) {
           if (newGrid[i].type === 'tree' && !newGrid[i].busyUntil && newGrid[i].pendingAction === null) {
             const col = i % 8;
             const row = Math.floor(i / 8);
             if (col < 7 && row < 7) {
-              const tl = i;
-              const tr = i + 1;
-              const bl = i + 8;
-              const br = i + 9;
-
+              const tl = i; const tr = i + 1; const bl = i + 8; const br = i + 9;
               const isIdleTree = (idx: number) => newGrid[idx].type === 'tree' && !newGrid[idx].busyUntil && newGrid[idx].pendingAction === null;
-
               if (isIdleTree(tr) && isIdleTree(bl) && isIdleTree(br)) {
-                // Fonde in foresta INATTIVA, richiederà l'azione del giocatore al mattino
                 newGrid[tl] = { ...newGrid[tl], type: 'forest', pendingAction: null, busyUntil: null, busyTotalDuration: null };
                 newGrid[tr] = { ...newGrid[tr], type: 'grass' };
                 newGrid[bl] = { ...newGrid[bl], type: 'grass' };
@@ -661,9 +747,9 @@ const App: React.FC = () => {
         return gridChanged ? newGrid : prevGrid;
       });
     }
-  }, [isNight, gameState]);
+  }, [isNight, gameState, dayCount]);
 
-  // --- EVENTI NOTTURNI E MAIN GAME LOOP ---
+  // --- LOOP DI GIOCO PRINCIPALE ---
   useEffect(() => {
     if (gameState !== 'playing') return;
 
@@ -685,6 +771,7 @@ const App: React.FC = () => {
           let updatedCell = { ...newGrid[i] };
           let cellModified = false;
 
+          // ... Logiche ticks Miniera, Foresta, Riproduzione Fattoria e Pesca ...
           if (updatedCell.type === 'mine' && updatedCell.pendingAction === 'active_mine') {
             const timeSinceLastTick = currentTime - (updatedCell.lastTickTime || currentTime);
             if (timeSinceLastTick >= 5000) {
@@ -698,72 +785,44 @@ const App: React.FC = () => {
               const newTicks = (updatedCell.mineTicks || 0) + 1;
               if (newTicks >= 12) {
                 updatedCell = { ...updatedCell, type: 'rock', pendingAction: null, lastTickTime: undefined, mineTicks: undefined, farmersUsed: undefined };
-              } else {
-                updatedCell = { ...updatedCell, lastTickTime: currentTime, mineTicks: newTicks };
-              }
+              } else { updatedCell = { ...updatedCell, lastTickTime: currentTime, mineTicks: newTicks }; }
             }
           }
 
           if (updatedCell.type === 'forest' && updatedCell.pendingAction === 'active_forest') {
             const timeSinceLastTick = currentTime - (updatedCell.lastTickTime || currentTime);
             if (timeSinceLastTick >= 15000) {
-              cellModified = true;
-              addReward('wood', 2);
+              cellModified = true; addReward('wood', 2);
               const newTicks = (updatedCell.forestTicks || 0) + 1;
-              if (newTicks >= 4) {
-                updatedCell = { ...updatedCell, type: 'grass', pendingAction: null, lastTickTime: undefined, forestTicks: undefined, farmersUsed: undefined };
-              } else {
-                updatedCell = { ...updatedCell, lastTickTime: currentTime, forestTicks: newTicks };
-              }
+              if (newTicks >= 4) { updatedCell = { ...updatedCell, type: 'grass', pendingAction: null, lastTickTime: undefined, forestTicks: undefined, farmersUsed: undefined }; }
+              else { updatedCell = { ...updatedCell, lastTickTime: currentTime, forestTicks: newTicks }; }
             }
           }
 
           if (updatedCell.type === 'animal_farm') {
             const count = updatedCell.animalCount || 0;
             if (count >= 2 && count < 5) {
-              if (!updatedCell.reproductionTargetTime) {
-                updatedCell = { ...updatedCell, reproductionTargetTime: currentTime + 20000 };
-                cellModified = true;
-              } else if (currentTime >= updatedCell.reproductionTargetTime) {
-                updatedCell = { ...updatedCell, animalCount: count + 1, reproductionTargetTime: (count + 1) < 5 ? currentTime + 20000 : null };
-                cellModified = true;
-              }
-            } else if (updatedCell.reproductionTargetTime) {
-              updatedCell = { ...updatedCell, reproductionTargetTime: null };
-              cellModified = true;
-            }
+              if (!updatedCell.reproductionTargetTime) { updatedCell = { ...updatedCell, reproductionTargetTime: currentTime + 20000 }; cellModified = true; }
+              else if (currentTime >= updatedCell.reproductionTargetTime) { updatedCell = { ...updatedCell, animalCount: count + 1, reproductionTargetTime: (count + 1) < 5 ? currentTime + 20000 : null }; cellModified = true; }
+            } else if (updatedCell.reproductionTargetTime) { updatedCell = { ...updatedCell, reproductionTargetTime: null }; cellModified = true; }
           }
 
           if (updatedCell.type === 'wild_animal') {
             const count = updatedCell.wildAnimalCount || 1;
             if (count >= 2 && count < 10) {
-              if (!updatedCell.wildReproductionTargetTime) {
-                updatedCell = { ...updatedCell, wildReproductionTargetTime: currentTime + 50000 };
-                cellModified = true;
-              } else if (currentTime >= updatedCell.wildReproductionTargetTime) {
-                updatedCell = { ...updatedCell, wildAnimalCount: count + 1, wildReproductionTargetTime: (count + 1) < 10 ? currentTime + 50000 : null };
-                cellModified = true;
-              }
-            } else if (updatedCell.wildReproductionTargetTime && count < 2) {
-              updatedCell = { ...updatedCell, wildReproductionTargetTime: null };
-              cellModified = true;
-            } else if (count >= 10 && updatedCell.wildReproductionTargetTime) {
-              updatedCell = { ...updatedCell, wildReproductionTargetTime: null };
-              cellModified = true;
-            }
+              if (!updatedCell.wildReproductionTargetTime) { updatedCell = { ...updatedCell, wildReproductionTargetTime: currentTime + 50000 }; cellModified = true; }
+              else if (currentTime >= updatedCell.wildReproductionTargetTime) { updatedCell = { ...updatedCell, wildAnimalCount: count + 1, wildReproductionTargetTime: (count + 1) < 10 ? currentTime + 50000 : null }; cellModified = true; }
+            } else if (updatedCell.wildReproductionTargetTime && count < 2) { updatedCell = { ...updatedCell, wildReproductionTargetTime: null }; cellModified = true; }
+            else if (count >= 10 && updatedCell.wildReproductionTargetTime) { updatedCell = { ...updatedCell, wildReproductionTargetTime: null }; cellModified = true; }
           }
 
           if (updatedCell.type === 'water' && updatedCell.pendingAction === 'fishing') {
             const timeSinceLastTick = currentTime - (updatedCell.lastTickTime || currentTime);
             if (timeSinceLastTick >= 10000) {
-              cellModified = true;
-              addReward('fish', 3);
+              cellModified = true; addReward('fish', 3);
               const newTicks = (updatedCell.fishingTicks || 0) + 1;
-              if (newTicks >= 3) {
-                updatedCell = { ...updatedCell, pendingAction: null, lastTickTime: undefined, fishingTicks: undefined };
-              } else {
-                updatedCell = { ...updatedCell, lastTickTime: currentTime, fishingTicks: newTicks };
-              }
+              if (newTicks >= 3) { updatedCell = { ...updatedCell, pendingAction: null, lastTickTime: undefined, fishingTicks: undefined }; }
+              else { updatedCell = { ...updatedCell, lastTickTime: currentTime, fishingTicks: newTicks }; }
             }
           }
 
@@ -782,78 +841,65 @@ const App: React.FC = () => {
             else if (updatedCell.pendingAction === 'building_lumber_mill') newType = 'lumber_mill';
             else if (updatedCell.pendingAction === 'building_stone_mason') newType = 'stone_mason';
             else if (updatedCell.pendingAction === 'building_port') newType = 'port';
-            else if (updatedCell.pendingAction === 'building_mine') {
-              newType = 'mine'; newPendingAction = 'active_mine'; updatedCell.lastTickTime = currentTime; updatedCell.mineTicks = 0;
-            }
-            else if (updatedCell.pendingAction === 'building_animal_farm') {
-              newType = 'animal_farm'; updatedCell.animalCount = 2;
-            }
+            else if (updatedCell.pendingAction === 'building_mine') { newType = 'mine'; newPendingAction = 'active_mine'; updatedCell.lastTickTime = currentTime; updatedCell.mineTicks = 0; }
+            else if (updatedCell.pendingAction === 'building_animal_farm') { newType = 'animal_farm'; updatedCell.animalCount = 2; }
             else if (updatedCell.pendingAction?.startsWith('planting_') && updatedCell.pendingAction !== 'planting_forest' && updatedCell.pendingAction !== 'planting_tree') {
-              newType = 'growing';
-              const cropType = updatedCell.cropType!;
-              updatedCell.busyUntil = currentTime + CROPS[cropType].growthTime;
-              updatedCell.busyTotalDuration = CROPS[cropType].growthTime;
-              newPendingAction = 'growing';
+              newType = 'growing'; const cropType = updatedCell.cropType!;
+              updatedCell.busyUntil = currentTime + CROPS[cropType].growthTime; updatedCell.busyTotalDuration = CROPS[cropType].growthTime; newPendingAction = 'growing';
             }
             else if (updatedCell.pendingAction === 'growing') newType = 'ready';
             else if (updatedCell.pendingAction === 'harvesting') {
-              newType = 'grass';
-              const crop = CROPS[updatedCell.cropType!];
+              newType = 'grass'; const crop = CROPS[updatedCell.cropType!];
               addReward(crop.id, crop.minYield + Math.floor(Math.random() * (crop.maxYield - crop.minYield + 1)));
               addReward(`${crop.id}Seeds` as keyof Inventory, crop.minSeeds + Math.floor(Math.random() * (crop.maxSeeds - crop.minSeeds + 1)));
             }
             else if (updatedCell.pendingAction === 'chopping') { newType = 'grass'; addReward('wood', 5 + Math.floor(Math.random() * 3)); }
             else if (updatedCell.pendingAction === 'mining') {
-              newType = 'grass';
-              const dropRoll = Math.random() * 100;
-              if (dropRoll < 7) addReward('gold', 2);
-              else if (dropRoll < 20) addReward('copper', 3);
-              else if (dropRoll < 38) addReward('iron', 3);
-              else addReward('stone', 3 + Math.floor(Math.random() * 3));
+              newType = 'grass'; const dropRoll = Math.random() * 100;
+              if (dropRoll < 7) addReward('gold', 2); else if (dropRoll < 20) addReward('copper', 3); else if (dropRoll < 38) addReward('iron', 3); else addReward('stone', 3 + Math.floor(Math.random() * 3));
             }
             else if (updatedCell.pendingAction === 'crafting_planks') { addReward('planks', 1); }
             else if (updatedCell.pendingAction === 'crafting_bricks') { addReward('bricks', 1); }
             else if (updatedCell.pendingAction === 'building_house') newType = 'house';
+
+            // Logica Caccia Coniglio
             else if (updatedCell.pendingAction === 'hunting') {
               newType = 'wild_animal';
               let wildCount = updatedCell.wildAnimalCount || 1;
-              if (Math.random() * 100 < 15) newlyDeadFarmers += 1;
+              if (Math.random() * 100 < 15) newlyDeadFarmers += 2; // Rischio 2 morti
               else if (Math.random() * 100 < 35) { addReward('wildMeat', 1); wildCount -= 1; }
 
               if (wildCount <= 0) { newType = 'grass'; updatedCell.wildAnimalCount = undefined; updatedCell.wildReproductionTargetTime = undefined; }
               else { updatedCell.wildAnimalCount = wildCount; }
             }
 
-            updatedCell = {
-              ...updatedCell, type: newType, pendingAction: newPendingAction,
-              cropType: newType === 'grass' ? undefined : updatedCell.cropType,
-              farmersUsed: undefined
-            };
+            // Logica Caccia Lupo
+            else if (updatedCell.pendingAction === 'hunting_wolf') {
+              newType = 'wolf';
+              let wolfCount = updatedCell.wolfCount || 1;
+              // Rischio Altissimo (40% di perdere 2 o 3 cittadini della squadra)
+              if (Math.random() * 100 < 40) newlyDeadFarmers += (Math.floor(Math.random() * 2) + 2);
+              else if (Math.random() * 100 < 70) { addReward('wildMeat', 2); wolfCount -= 1; }
 
-            if (newPendingAction !== 'growing') {
-              updatedCell.busyUntil = null;
-              updatedCell.busyTotalDuration = null;
+              if (wolfCount <= 0) { newType = 'grass'; updatedCell.wolfCount = undefined; }
+              else { updatedCell.wolfCount = wolfCount; }
             }
+
+            updatedCell = { ...updatedCell, type: newType, pendingAction: newPendingAction, cropType: newType === 'grass' ? undefined : updatedCell.cropType, farmersUsed: undefined };
+            if (newPendingAction !== 'growing') { updatedCell.busyUntil = null; updatedCell.busyTotalDuration = null; }
           }
 
-          if (cellModified) {
-            newGrid[i] = updatedCell;
-            gridChanged = true;
-          }
+          if (cellModified) { newGrid[i] = updatedCell; gridChanged = true; }
         }
 
-        if (gridChanged) {
-          if (Object.keys(newRewards).length > 0) {
-            setTimeout(() => {
-              setInventory(prev => {
-                const next = { ...prev };
-                (Object.keys(newRewards) as Array<keyof Inventory>).forEach(k => {
-                  next[k] = (next[k] as number) + (newRewards[k] as number);
-                });
-                return next;
-              });
-            }, 0);
-          }
+        if (gridChanged && Object.keys(newRewards).length > 0) {
+          setTimeout(() => {
+            setInventory(prev => {
+              const next = { ...prev };
+              (Object.keys(newRewards) as Array<keyof Inventory>).forEach(k => { next[k] = (next[k] as number) + (newRewards[k] as number); });
+              return next;
+            });
+          }, 0);
         }
 
         if (newlyDeadFarmers > 0) {
@@ -863,6 +909,9 @@ const App: React.FC = () => {
               for (let i = 0; i < newlyDeadFarmers; i++) next.push(currentTime + 40000);
               return next;
             });
+            const toastId = 'evt-death-' + Date.now();
+            setToasts(prev => [...prev, { id: toastId, title: `Tragedia! La caccia ha causato la morte di ${newlyDeadFarmers} cittadini!`, type: 'danger' }]);
+            setTimeout(() => { setToasts(prev => prev.filter(t => t.id !== toastId)); }, 5000);
           }, 0);
         }
 
@@ -883,27 +932,15 @@ const App: React.FC = () => {
   }, [gameState]);
 
   const startNewGame = () => {
-    setInventory(INITIAL_INVENTORY);
-    setUnlocked(INITIAL_UNLOCKED);
-    setGrid(generateInitialGrid());
-    setRespawningFarmers([]);
-    setCompletedQuests([]);
-    setUnreadQuests(0);
-    setDayCount(1);
-    setActionsUsedToday(0);
-    setIsNight(false);
-    setToasts([]);
-    setSelectedCell(null);
-    setGameState('playing');
+    setInventory(INITIAL_INVENTORY); setUnlocked(INITIAL_UNLOCKED); setGrid(generateInitialGrid()); setRespawningFarmers([]);
+    setCompletedQuests([]); setUnreadQuests(0); setDayCount(1); setActionsUsedToday(0); setIsNight(false); setToasts([]);
+    setSelectedCell(null); setGameState('playing');
   };
 
   useEffect(() => {
     setUnlocked(prev => {
-      let changed = false;
-      const next = { ...prev };
-      const checkUnlock = (key: keyof UnlockedBuildings, condition: boolean) => {
-        if (!next[key] && condition) { next[key] = true; changed = true; }
-      };
+      let changed = false; const next = { ...prev };
+      const checkUnlock = (key: keyof UnlockedBuildings, condition: boolean) => { if (!next[key] && condition) { next[key] = true; changed = true; } };
 
       checkUnlock('tree', inventory.coins >= COSTS.tree.coins && totalFarmers >= COSTS.tree.farmers);
       checkUnlock('forest', inventory.coins >= COSTS.forest.coins && inventory.stone >= COSTS.forest.stone && totalFarmers >= COSTS.forest.farmers);
@@ -924,8 +961,7 @@ const App: React.FC = () => {
 
   const reachableCells = useMemo(() => {
     const reachable = new Set<number>();
-    const queue = [27];
-    reachable.add(27);
+    const queue = [27]; reachable.add(27);
 
     while (queue.length > 0) {
       const curr = queue.shift()!;
@@ -939,9 +975,7 @@ const App: React.FC = () => {
         if (!reachable.has(n)) {
           reachable.add(n);
           const isWater = grid[n].type === 'water';
-          if (!isWater || totalPorts > 0) {
-            queue.push(n);
-          }
+          if (!isWater || totalPorts > 0) { queue.push(n); }
         }
       }
     }
@@ -949,16 +983,11 @@ const App: React.FC = () => {
   }, [grid, totalPorts]);
 
   const getMergeableCells = (cellId: number, targetType: CellType): number[] | null => {
-    const isIdleType = (id: number) => {
-      const c = grid.find(cell => cell.id === id);
-      return c && c.type === targetType && !c.busyUntil && c.pendingAction === null;
-    };
-
+    const isIdleType = (id: number) => { const c = grid.find(cell => cell.id === id); return c && c.type === targetType && !c.busyUntil && c.pendingAction === null; };
     const possibleTopLefts = [cellId, cellId - 1, cellId - 8, cellId - 9];
     for (const tl of possibleTopLefts) {
       if (tl < 0 || tl > 63) continue;
-      const col = tl % 8;
-      const row = Math.floor(tl / 8);
+      const col = tl % 8; const row = Math.floor(tl / 8);
       if (col >= 7 || row >= 7) continue;
       const group = [tl, tl + 1, tl + 8, tl + 9];
       if (group.includes(cellId) && group.every(isIdleType)) return group;
@@ -1039,7 +1068,8 @@ const App: React.FC = () => {
     }
 
     let costFarmers = 1;
-    if (action === 'hunting') costFarmers = 2;
+    if (action === 'hunting') costFarmers = 2; // Coniglio
+    else if (action === 'hunting_wolf') costFarmers = 3; // Lupo
     else if (action === 'start_active_forest') costFarmers = 3;
     else if (action?.startsWith('building_')) {
       const buildingType = action.replace('building_', '');
@@ -1052,16 +1082,14 @@ const App: React.FC = () => {
     if (actionsLeft < costFarmers) return;
 
     if (action === 'start_active_forest') {
-      setGrid(prev => prev.map(c => c.id === cellId ? {
-        ...c, pendingAction: 'active_forest', lastTickTime: Date.now(), forestTicks: 0, farmersUsed: costFarmers
-      } : c));
+      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, pendingAction: 'active_forest', lastTickTime: Date.now(), forestTicks: 0, farmersUsed: costFarmers } : c));
       setActionsUsedToday(prev => prev + costFarmers);
       setSelectedCell(null);
       return;
     }
 
-    if (action === 'hunting') {
-      const duration = ACTION_TIMES.hunting;
+    if (action === 'hunting' || action === 'hunting_wolf') {
+      const duration = action === 'hunting_wolf' ? ACTION_TIMES.hunting_wolf : ACTION_TIMES.hunting;
       setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers } : c));
       setActionsUsedToday(prev => prev + costFarmers);
       setSelectedCell(null);
@@ -1073,21 +1101,16 @@ const App: React.FC = () => {
       setInventory(prev => ({ ...prev, wood: prev.wood - COSTS.house.wood, stone: prev.stone - COSTS.house.stone }));
       const duration = ACTION_TIMES.building_house;
       setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers } : c));
-      setActionsUsedToday(prev => prev + costFarmers);
-      setSelectedCell(null);
-      return;
+      setActionsUsedToday(prev => prev + costFarmers); setSelectedCell(null); return;
     }
 
     if (action === 'building_port') {
       const futureTotalFarmers = baseFarmers - ((totalPorts + 1) * COSTS.port.farmers) - respawningFarmers.length;
       if (inventory.wood < COSTS.port.wood || inventory.stone < COSTS.port.stone || inventory.coins < COSTS.port.coins || futureTotalFarmers < 1) return;
-
       setInventory(prev => ({ ...prev, wood: prev.wood - COSTS.port.wood, stone: prev.stone - COSTS.port.stone, coins: prev.coins - COSTS.port.coins }));
       const duration = ACTION_TIMES.building_port;
       setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers } : c));
-      setActionsUsedToday(prev => prev + costFarmers);
-      setSelectedCell(null);
-      return;
+      setActionsUsedToday(prev => prev + costFarmers); setSelectedCell(null); return;
     }
 
     if (action === 'building_lumber_mill') {
@@ -1095,9 +1118,7 @@ const App: React.FC = () => {
       setInventory(prev => ({ ...prev, wood: prev.wood - COSTS.lumber_mill.wood, stone: prev.stone - COSTS.lumber_mill.stone, coins: prev.coins - COSTS.lumber_mill.coins }));
       const duration = ACTION_TIMES.building_lumber_mill;
       setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers } : c));
-      setActionsUsedToday(prev => prev + costFarmers);
-      setSelectedCell(null);
-      return;
+      setActionsUsedToday(prev => prev + costFarmers); setSelectedCell(null); return;
     }
 
     if (action === 'building_stone_mason') {
@@ -1105,9 +1126,7 @@ const App: React.FC = () => {
       setInventory(prev => ({ ...prev, wood: prev.wood - COSTS.stone_mason.wood, stone: prev.stone - COSTS.stone_mason.stone, coins: prev.coins - COSTS.stone_mason.coins }));
       const duration = ACTION_TIMES.building_stone_mason;
       setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers } : c));
-      setActionsUsedToday(prev => prev + costFarmers);
-      setSelectedCell(null);
-      return;
+      setActionsUsedToday(prev => prev + costFarmers); setSelectedCell(null); return;
     }
 
     if (action === 'crafting_planks') {
@@ -1115,9 +1134,7 @@ const App: React.FC = () => {
       setInventory(prev => ({ ...prev, wood: prev.wood - 2 }));
       const duration = ACTION_TIMES.crafting;
       setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers } : c));
-      setActionsUsedToday(prev => prev + costFarmers);
-      setSelectedCell(null);
-      return;
+      setActionsUsedToday(prev => prev + costFarmers); setSelectedCell(null); return;
     }
 
     if (action === 'crafting_bricks') {
@@ -1125,9 +1142,7 @@ const App: React.FC = () => {
       setInventory(prev => ({ ...prev, stone: prev.stone - 2 }));
       const duration = ACTION_TIMES.crafting;
       setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers } : c));
-      setActionsUsedToday(prev => prev + costFarmers);
-      setSelectedCell(null);
-      return;
+      setActionsUsedToday(prev => prev + costFarmers); setSelectedCell(null); return;
     }
 
     if (action === 'building_mine') {
@@ -1135,9 +1150,7 @@ const App: React.FC = () => {
       setInventory(prev => ({ ...prev, wood: prev.wood - COSTS.mine.wood, coins: prev.coins - COSTS.mine.coins }));
       const duration = ACTION_TIMES.building_mine;
       setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers } : c));
-      setActionsUsedToday(prev => prev + costFarmers);
-      setSelectedCell(null);
-      return;
+      setActionsUsedToday(prev => prev + costFarmers); setSelectedCell(null); return;
     }
 
     if (action === 'building_animal_farm') {
@@ -1145,9 +1158,7 @@ const App: React.FC = () => {
       setInventory(prev => ({ ...prev, wheat: prev.wheat - COSTS.animal_farm.wheat, wood: prev.wood - COSTS.animal_farm.wood, stone: prev.stone - COSTS.animal_farm.stone, coins: prev.coins - COSTS.animal_farm.coins }));
       const duration = ACTION_TIMES.building_animal_farm;
       setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers } : c));
-      setActionsUsedToday(prev => prev + costFarmers);
-      setSelectedCell(null);
-      return;
+      setActionsUsedToday(prev => prev + costFarmers); setSelectedCell(null); return;
     }
 
     if (action === 'building_village') {
@@ -1156,16 +1167,11 @@ const App: React.FC = () => {
       setInventory(prev => ({ ...prev, coins: prev.coins - COSTS.village.coins }));
       const duration = ACTION_TIMES.building_village;
       setGrid(prev => prev.map(c => {
-        if (c.id === cellId) {
-          return { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers };
-        } else if (targetCells.includes(c.id)) {
-          return { ...c, type: 'grass', pendingAction: null, busyUntil: null, busyTotalDuration: null, farmersUsed: undefined };
-        }
+        if (c.id === cellId) { return { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers }; }
+        else if (targetCells.includes(c.id)) { return { ...c, type: 'grass', pendingAction: null, busyUntil: null, busyTotalDuration: null, farmersUsed: undefined }; }
         return c;
       }));
-      setActionsUsedToday(prev => prev + costFarmers);
-      setSelectedCell(null);
-      return;
+      setActionsUsedToday(prev => prev + costFarmers); setSelectedCell(null); return;
     }
 
     if (action === 'building_city') {
@@ -1174,16 +1180,11 @@ const App: React.FC = () => {
       setInventory(prev => ({ ...prev, coins: prev.coins - COSTS.city.coins }));
       const duration = ACTION_TIMES.building_city;
       setGrid(prev => prev.map(c => {
-        if (c.id === cellId) {
-          return { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers };
-        } else if (targetCells.includes(c.id)) {
-          return { ...c, type: 'grass', pendingAction: null, busyUntil: null, busyTotalDuration: null, farmersUsed: undefined };
-        }
+        if (c.id === cellId) { return { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers }; }
+        else if (targetCells.includes(c.id)) { return { ...c, type: 'grass', pendingAction: null, busyUntil: null, busyTotalDuration: null, farmersUsed: undefined }; }
         return c;
       }));
-      setActionsUsedToday(prev => prev + costFarmers);
-      setSelectedCell(null);
-      return;
+      setActionsUsedToday(prev => prev + costFarmers); setSelectedCell(null); return;
     }
 
     if (action === 'building_county') {
@@ -1192,16 +1193,11 @@ const App: React.FC = () => {
       setInventory(prev => ({ ...prev, coins: prev.coins - COSTS.county.coins }));
       const duration = ACTION_TIMES.building_county;
       setGrid(prev => prev.map(c => {
-        if (c.id === cellId) {
-          return { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers };
-        } else if (targetCells.includes(c.id)) {
-          return { ...c, type: 'grass', pendingAction: null, busyUntil: null, busyTotalDuration: null, farmersUsed: undefined };
-        }
+        if (c.id === cellId) { return { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers }; }
+        else if (targetCells.includes(c.id)) { return { ...c, type: 'grass', pendingAction: null, busyUntil: null, busyTotalDuration: null, farmersUsed: undefined }; }
         return c;
       }));
-      setActionsUsedToday(prev => prev + costFarmers);
-      setSelectedCell(null);
-      return;
+      setActionsUsedToday(prev => prev + costFarmers); setSelectedCell(null); return;
     }
 
     if (action === 'planting_tree') {
@@ -1209,9 +1205,7 @@ const App: React.FC = () => {
       setInventory(prev => ({ ...prev, coins: prev.coins - COSTS.tree.coins }));
       const duration = ACTION_TIMES.planting_tree;
       setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers } : c));
-      setActionsUsedToday(prev => prev + costFarmers);
-      setSelectedCell(null);
-      return;
+      setActionsUsedToday(prev => prev + costFarmers); setSelectedCell(null); return;
     }
 
     if (action === 'planting_forest') {
@@ -1219,9 +1213,7 @@ const App: React.FC = () => {
       setInventory(prev => ({ ...prev, coins: prev.coins - COSTS.forest.coins, stone: prev.stone - COSTS.forest.stone }));
       const duration = ACTION_TIMES.planting_forest;
       setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers } : c));
-      setActionsUsedToday(prev => prev + costFarmers);
-      setSelectedCell(null);
-      return;
+      setActionsUsedToday(prev => prev + costFarmers); setSelectedCell(null); return;
     }
 
     if (action === 'spawn_rock') {
@@ -1229,35 +1221,24 @@ const App: React.FC = () => {
       setInventory(prev => ({ ...prev, coins: prev.coins - COSTS.rock.coins }));
       const duration = ACTION_TIMES.spawn_rock;
       setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers } : c));
-      setActionsUsedToday(prev => prev + costFarmers);
-      setSelectedCell(null);
-      return;
+      setActionsUsedToday(prev => prev + costFarmers); setSelectedCell(null); return;
     }
 
     if (action?.startsWith('planting_') && action !== 'planting_forest' && action !== 'planting_tree') {
       const cropId = action.split('_')[1] as CropId;
       const seedKey = `${cropId}Seeds` as keyof Inventory;
       if (inventory[seedKey] < 1) return;
-
       setInventory(prev => ({ ...prev, [seedKey]: (prev[seedKey] as number) - 1 }));
       const duration = ACTION_TIMES.planting;
-
-      setGrid(prev => prev.map(c => c.id === cellId ? {
-        ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, cropType: cropId, farmersUsed: costFarmers
-      } : c));
-      setActionsUsedToday(prev => prev + costFarmers);
-      setSelectedCell(null);
-      return;
+      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, cropType: cropId, farmersUsed: costFarmers } : c));
+      setActionsUsedToday(prev => prev + costFarmers); setSelectedCell(null); return;
     }
 
     if (['plowing', 'chopping', 'mining', 'harvesting'].includes(action as string)) {
       const duration = ACTION_TIMES[action as keyof typeof ACTION_TIMES];
-      setGrid(prev => prev.map(c => c.id === cellId ? {
-        ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers
-      } : c));
+      setGrid(prev => prev.map(c => c.id === cellId ? { ...c, busyUntil: Date.now() + duration, busyTotalDuration: duration, pendingAction: action, farmersUsed: costFarmers } : c));
       setActionsUsedToday(prev => prev + costFarmers);
     }
-
     setSelectedCell(null);
   };
 
@@ -1271,9 +1252,7 @@ const App: React.FC = () => {
               <Mountain size={28} color="#475569" fill="#334155" />
               <Pickaxe size={16} color="#fbbf24" style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }} />
             </div>
-            <div className="progress-bar-bg">
-              <div className="progress-bar-fill" style={{ width: `${progress}%`, background: '#3b82f6' }}></div>
-            </div>
+            <div className="progress-bar-bg"><div className="progress-bar-fill" style={{ width: `${progress}%`, background: '#3b82f6' }}></div></div>
           </div>
       );
     }
@@ -1300,9 +1279,7 @@ const App: React.FC = () => {
       return (
           <div className="progress-container">
             <Fish size={20} color="#0284c7" className="animate-bounce-slow" style={{marginTop: '-5px'}}/>
-            <div className="progress-bar-bg">
-              <div className="progress-bar-fill" style={{ width: `${progress}%`, background: '#fbbf24' }}></div>
-            </div>
+            <div className="progress-bar-bg"><div className="progress-bar-fill" style={{ width: `${progress}%`, background: '#fbbf24' }}></div></div>
           </div>
       );
     }
@@ -1319,9 +1296,7 @@ const App: React.FC = () => {
               </div>
             </div>
             {isReproducing && (
-                <div className="progress-bar-bg">
-                  <div className="progress-bar-fill" style={{ width: `${progress}%`, background: '#fb7185' }}></div>
-                </div>
+                <div className="progress-bar-bg"><div className="progress-bar-fill" style={{ width: `${progress}%`, background: '#fb7185' }}></div></div>
             )}
           </div>
       );
@@ -1356,13 +1331,11 @@ const App: React.FC = () => {
               {cell.pendingAction === 'building_port' && <Anchor size={24} color="#1e3a8a" />}
               {cell.pendingAction === 'crafting_planks' && <Box size={24} color="#d97706" />}
               {cell.pendingAction === 'crafting_bricks' && <Layers size={24} color="#cbd5e1" />}
-              {cell.pendingAction === 'hunting' && <Crosshair size={24} color="#c2410c" />}
+              {(cell.pendingAction === 'hunting' || cell.pendingAction === 'hunting_wolf') && <Crosshair size={24} color="#c2410c" />}
 
               {isPassive && cell.cropType && React.createElement(CROPS[cell.cropType].icon, { size: 24, color: CROPS[cell.cropType].color })}
             </div>
-            <div className="progress-bar-bg">
-              <div className="progress-bar-fill" style={{ width: `${progress}%`, background: isPassive ? '#4ade80' : '#fbbf24' }}></div>
-            </div>
+            <div className="progress-bar-bg"><div className="progress-bar-fill" style={{ width: `${progress}%`, background: isPassive ? '#4ade80' : '#fbbf24' }}></div></div>
           </div>
       );
     }
@@ -1397,6 +1370,17 @@ const App: React.FC = () => {
               {cell.wildAnimalCount! > 1 && (
                   <div style={{position:'absolute', bottom: -5, right: -5, background: 'white', borderRadius: '50%', padding: '2px', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'10px', fontWeight:'bold', border:'1px solid #ccc', color: '#b45309', width: '16px', height: '16px'}}>
                     {cell.wildAnimalCount}
+                  </div>
+              )}
+            </div>
+        );
+      case 'wolf':
+        return (
+            <div style={{ position: 'relative' }}>
+              <Dog size={28} color="#0f172a" fill="#334155" />
+              {cell.wolfCount! > 1 && (
+                  <div style={{position:'absolute', bottom: -5, right: -5, background: '#1e293b', borderRadius: '50%', padding: '2px', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'10px', fontWeight:'bold', border:'1px solid #94a3b8', color: '#f8fafc', width: '16px', height: '16px'}}>
+                    {cell.wolfCount}
                   </div>
               )}
             </div>
@@ -1523,24 +1507,16 @@ const App: React.FC = () => {
       .cell.plowed { background: repeating-linear-gradient(180deg, #92400e, #92400e 20%, #78350f 20%, #78350f 25%); }
       .cell.water { background: #0ea5e9; box-shadow: inset 0 0 10px rgba(2, 132, 199, 0.5); }
       .cell.wild_animal { background: #86efac; }
+      .cell.wolf { background: #e2e8f0; box-shadow: inset 0 0 10px rgba(0,0,0,0.2); }
       
       .progress-container { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; height: 100%; }
       .progress-bar-bg { position: absolute; bottom: 4px; width: 80%; height: 6px; background: rgba(0,0,0,0.3); border-radius: 4px; overflow: hidden; border: 1px solid rgba(255,255,255,0.2); z-index: 20; }
       .progress-bar-fill { height: 100%; transition: width 0.1s linear; }
       
-      @keyframes strikeAnim {
-          0% { transform: rotate(-40deg); }
-          100% { transform: rotate(30deg); }
-      }
-      @keyframes farmAnim {
-          0% { transform: rotate(-10deg) translateY(-2px); }
-          100% { transform: rotate(25deg) translateY(4px); }
-      }
-      @keyframes huntAnim {
-          0% { transform: translateX(0) rotate(0deg); }
-          40% { transform: translateX(-5px) rotate(-15deg); }
-          100% { transform: translateX(12px) rotate(20deg); }
-      }
+      @keyframes strikeAnim { 0% { transform: rotate(-40deg); } 100% { transform: rotate(30deg); } }
+      @keyframes farmAnim { 0% { transform: rotate(-10deg) translateY(-2px); } 100% { transform: rotate(25deg) translateY(4px); } }
+      @keyframes huntAnim { 0% { transform: translateX(0) rotate(0deg); } 40% { transform: translateX(-5px) rotate(-15deg); } 100% { transform: translateX(12px) rotate(20deg); } }
+      
       .anim-strike { animation: strikeAnim 0.3s infinite alternate ease-in-out; }
       .anim-farm { animation: farmAnim 0.4s infinite alternate ease-in-out; }
       .anim-hunt { animation: huntAnim 0.5s infinite alternate cubic-bezier(0.25, 0.46, 0.45, 0.94); }
@@ -1569,7 +1545,6 @@ const App: React.FC = () => {
       .btn-buy, .btn-sell, .btn-sell-all { padding: 8px 12px; margin: 0; font-size: 13px; width: auto; border-radius: 12px; border: none; font-weight: bold; cursor: pointer; color: white; }
       .btn-buy { background: #10b981; } .btn-sell { background: #eab308; } .btn-sell-all { background: #f59e0b; }
 
-      /* SCHERMATE MENU (START E GAME OVER) */
       .fullscreen-menu { position: fixed; inset: 0; background: #0f172a; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; text-align: center; padding: 20px; }
       .fullscreen-menu h1 { font-size: 3rem; color: #4ade80; margin-bottom: 10px; font-weight: 900; letter-spacing: -1px; }
       .fullscreen-menu p { color: #94a3b8; font-size: 1.1rem; max-width: 500px; margin-bottom: 40px; line-height: 1.5; }
@@ -1581,7 +1556,6 @@ const App: React.FC = () => {
       @keyframes bounce-slow { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
       .animate-bounce-slow { animation: bounce-slow 2s infinite ease-in-out; }
 
-      /* ELDER MODAL */
       .elder-chat-box { background: #f8fafc; border: 2px solid #e2e8f0; border-radius: 16px; padding: 20px; display: flex; gap: 15px; align-items: flex-start; }
       .elder-avatar { background: #8b5cf6; color: white; width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 4px 10px rgba(139, 92, 246, 0.4); }
       .elder-text { font-size: 15px; color: #1e293b; line-height: 1.5; font-style: italic; }
@@ -1599,9 +1573,9 @@ const App: React.FC = () => {
         <div className="fullscreen-menu">
           <h1>Fattoria Avanzata</h1>
           <p>
-            Espandi il tuo insediamento, estrai minerali preziosi, commercia nel mercato e affronta l'ignoto costruendo porti.
+            Gestisci l'insediamento, proteggilo dai Lupi, esplora il mare e costruisci un grande impero.
             <br/><br/>
-            <strong>Attenzione:</strong> Le tue decisioni contano. Il gioco include eventi casuali pericolosi. Se perdi tutti i tuoi cittadini, la partita terminerà!
+            <strong>Attenzione:</strong> Le tue decisioni contano e le belve sono fameliche. Se perdi tutti i tuoi cittadini, la partita terminerà!
           </p>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', alignItems: 'center', width: '100%' }}>
@@ -1634,13 +1608,13 @@ const App: React.FC = () => {
                     <p>Ogni tuo cittadino rappresenta <strong>1 Azione</strong> al giorno. Costruire un edificio o lavorare la terra consuma le azioni. Se esaurisci tutte le azioni disponibili scenderà automaticamente la notte, costringendo i cittadini a riposare prima del giorno successivo.</p>
 
                     <h4 style={{color: '#10b981'}}>🏗️ Progressione e Sblocchi</h4>
-                    <p>Raccogli materiali di base (Legna e Pietra) per sbloccare nuove strutture. Quando raggiungi i requisiti di risorse e popolazione per la prima volta, l'edificio si sbloccherà permanentemente.</p>
+                    <p>Raccogli materiali di base per sbloccare nuove strutture. Quando raggiungi i requisiti di risorse e popolazione per la prima volta, l'edificio si sbloccherà permanentemente.</p>
 
-                    <h4 style={{color: '#fbbf24'}}>🌫️ Esplorazione e Navigazione</h4>
-                    <p>Il mare è avvolto dalla nebbia di guerra. Costruisci un <strong>Porto</strong> (che necessita di 5 cittadini come equipaggio fisso) per diradare la nebbia e sbloccare le navi da pesca per il sostentamento.</p>
+                    <h4 style={{color: '#b45309'}}>🐺 Fauna e Sopravvivenza (NOVITÀ!)</h4>
+                    <p>I <strong>Conigli</strong> si muovono ogni notte, puoi cacciarli per ottenere carne. I <strong>Lupi</strong> si muovono ogni 3 notti, puntando verso i conigli per sbranarli. Puoi cacciare i lupi, ma è <b>estremamente pericoloso</b> e potresti perdere più di un cittadino durante la battuta di caccia.</p>
 
-                    <h4 style={{color: '#ef4444'}}>⚠️ Eventi Casuali e Sopravvivenza</h4>
-                    <p>Fai molta attenzione! Malattie, branchi di lupi affamati (se stermini gli animali selvatici) e banditi via nave (dopo aver costruito il porto) possono colpire il tuo insediamento. Se la popolazione scende a zero, sarà <strong>Game Over</strong>.</p>
+                    <h4 style={{color: '#ef4444'}}>⚠️ Game Over</h4>
+                    <p>Malattie, attacchi di banditi e cacce pericolose possono ridurre la popolazione. Se la popolazione scende a zero, sarà <strong>Game Over</strong>.</p>
                   </div>
                 </div>
               </div>
@@ -1941,7 +1915,8 @@ const App: React.FC = () => {
                           {activeCell.type === 'tree' && "Albero Alto"}
                           {activeCell.type === 'forest' && "Bosco Rigoglioso"}
                           {activeCell.type === 'rock' && "Roccia Solida"}
-                          {activeCell.type === 'wild_animal' && "Animali Selvatici"}
+                          {activeCell.type === 'wild_animal' && "Branchi di Conigli"}
+                          {activeCell.type === 'wolf' && "Branco di Lupi!"}
                           {activeCell.type === 'ready' && "Raccolto Pronto!"}
                           {activeCell.type === 'growing' && "Coltura in crescita..."}
                           {activeCell.type === 'mine' && "Miniera Attiva"}
@@ -1980,18 +1955,39 @@ const App: React.FC = () => {
                             <div style={{ textAlign: 'center', padding: '10px', color: '#64748b' }}>
                               <Rabbit size={40} color="#b45309" style={{ margin: '0 auto 10px' }} />
                               <div style={{fontSize: '18px', fontWeight: 'bold', color: '#1e293b'}}>
-                                {activeCell.wildAnimalCount === 1 ? 'Animale Solitario' : `Branco Selvatico: ${activeCell.wildAnimalCount} / 10`}
+                                {activeCell.wildAnimalCount === 1 ? 'Coniglio Solitario' : `Branco di Conigli: ${activeCell.wildAnimalCount} / 10`}
                               </div>
                               <div style={{fontSize: '13px', margin: '10px 0 20px'}}>
                                 {activeCell.wildAnimalCount === 1 ? "Cerca un compagno per riprodursi..." :
-                                    activeCell.wildAnimalCount! >= 2 && activeCell.wildAnimalCount! < 10 ? "Si stanno riproducendo passivamente (50s)..." : "Capacità massima del branco raggiunta!"}
+                                    activeCell.wildAnimalCount! >= 2 && activeCell.wildAnimalCount! < 10 ? "Si stanno riproducendo passivamente..." : "Capacità massima del branco raggiunta!"}
                               </div>
                               <button className="action-btn" style={{background: '#c2410c', color: 'white'}} disabled={actionsLeft < 2} onClick={() => startAction(activeCell.id, 'hunting')}>
-                                <Crosshair size={20} /> Caccia ({(ACTION_TIMES.hunting/1000)}s)
+                                <Crosshair size={20} /> Caccia ai Conigli ({(ACTION_TIMES.hunting/1000)}s)
                                 <span className="action-badge" style={{background: actionsLeft >= 2 ? 'rgba(255,255,255,0.2)' : '#ef4444', padding: '4px 6px'}}>
-                          2<Zap size={10} style={{display:'inline', verticalAlign:'middle'}}/> | 20% 🎯 | 15% <Skull size={10} style={{display:'inline', verticalAlign:'middle'}}/>
+                          2<Zap size={10} style={{display:'inline', verticalAlign:'middle'}}/> | 35% 🎯 | 15% <Skull size={10} style={{display:'inline', verticalAlign:'middle'}}/>
                         </span>
                               </button>
+                            </div>
+                        )}
+
+                        {activeCell.type === 'wolf' && (
+                            <div style={{ textAlign: 'center', padding: '10px', color: '#64748b' }}>
+                              <Dog size={40} color="#0f172a" fill="#334155" style={{ margin: '0 auto 10px' }} />
+                              <div style={{fontSize: '18px', fontWeight: 'bold', color: '#ef4444'}}>
+                                {activeCell.wolfCount === 1 ? 'Lupo Solitario' : `Branco di Lupi: ${activeCell.wolfCount} / 10`}
+                              </div>
+                              <div style={{fontSize: '13px', margin: '10px 0 20px'}}>
+                                Pericolo! Questi lupi daranno la caccia ai conigli.
+                              </div>
+                              <button className="action-btn" style={{background: '#7f1d1d', color: 'white'}} disabled={actionsLeft < 3} onClick={() => startAction(activeCell.id, 'hunting_wolf')}>
+                                <Crosshair size={20} /> Caccia al Lupo ({(ACTION_TIMES.hunting_wolf/1000)}s)
+                                <span className="action-badge" style={{background: actionsLeft >= 3 ? 'rgba(255,255,255,0.2)' : '#ef4444', padding: '4px 6px'}}>
+                          3<Zap size={10} style={{display:'inline', verticalAlign:'middle'}}/> | 70% 🎯 | 40% <Skull size={10} style={{display:'inline', verticalAlign:'middle'}}/>
+                        </span>
+                              </button>
+                              <div style={{fontSize: '11px', color: '#ef4444', marginTop: '10px'}}>
+                                ⚠️ Altissimo Rischio! Se fallisci potresti perdere più cittadini.
+                              </div>
                             </div>
                         )}
 
@@ -2249,10 +2245,7 @@ const App: React.FC = () => {
                                 {activeCell.animalCount! >= 5 && "Capacità massima raggiunta!"}
                               </div>
 
-                              <button className="action-btn btn-sell-direct" disabled={totalAnimals <= 2} onClick={() => {
-                                sellAnimals(1, 100);
-                                setSelectedCell(null);
-                              }}>
+                              <button className="action-btn btn-sell-direct" disabled={totalAnimals <= 2} onClick={() => { sellAnimals(1, 100); setSelectedCell(null); }}>
                                 <Coins size={20} /> Vendi 1 Animale (+100 Monete)
                               </button>
                             </div>
@@ -2268,8 +2261,7 @@ const App: React.FC = () => {
                         {activeCell.type === 'forest' && activeCell.pendingAction === 'active_forest' && (
                             <div style={{ textAlign: 'center', padding: '20px', color: '#64748b' }}>
                               <div style={{display: 'flex', justifyContent: 'center', marginBottom: '10px'}}>
-                                <TreePine size={40} color="#15803d" />
-                                <TreePine size={40} color="#15803d" style={{marginLeft: '-15px'}} />
+                                <TreePine size={40} color="#15803d" /><TreePine size={40} color="#15803d" style={{marginLeft: '-15px'}} />
                               </div>
                               I taglialegna stanno disboscando la foresta.<br/>Generano automaticamente 2 legna ogni 15s. Scomparirà dopo 60s. ({activeCell.forestTicks || 0}/4)
                             </div>
@@ -2278,15 +2270,12 @@ const App: React.FC = () => {
                         {activeCell.type === 'forest' && activeCell.pendingAction !== 'active_forest' && (
                             <div style={{ textAlign: 'center', padding: '10px' }}>
                               <div style={{display: 'flex', justifyContent: 'center', marginBottom: '10px'}}>
-                                <TreePine size={40} color="#15803d" />
-                                <TreePine size={40} color="#15803d" style={{marginLeft: '-15px'}} />
+                                <TreePine size={40} color="#15803d" /><TreePine size={40} color="#15803d" style={{marginLeft: '-15px'}} />
                               </div>
                               <div style={{fontSize: '13px', color: '#64748b', marginBottom: '15px'}}>Bosco Rigoglioso. Ricco di legname, richiede una squadra di taglialegna per essere disboscato.</div>
                               <button className="action-btn btn-chop" disabled={actionsLeft < 3} onClick={() => startAction(activeCell.id, 'start_active_forest')}>
                                 <Axe size={20} /> Invia Squadra Taglialegna
-                                <span className="action-badge" style={{background: actionsLeft >= 3 ? 'rgba(255,255,255,0.2)' : '#ef4444'}}>
-                                            3<Zap size={10} />
-                                        </span>
+                                <span className="action-badge" style={{background: actionsLeft >= 3 ? 'rgba(255,255,255,0.2)' : '#ef4444'}}>3<Zap size={10} /></span>
                               </button>
                             </div>
                         )}
