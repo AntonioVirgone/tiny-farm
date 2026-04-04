@@ -5,6 +5,8 @@ import {
   Ship, Shrub, Skull, Sprout, Tent, Tractor, TreePine, Warehouse, X, Zap,
 } from 'lucide-react';
 import { ACTION_TIMES, COSTS, CROPS } from '../../constants/game.constants';
+import { DEFAULT_GAME_CONFIG } from '../../constants/config.defaults';
+import type { GameConfig } from '../../types/config.types';
 import type { ActionType, Cell, CropId, Inventory, UnlockedBuildings } from '../../types/game.types';
 
 interface Props {
@@ -18,6 +20,7 @@ interface Props {
   totalPorts: number;
   baseFarmers: number;
   respawningCount: number;
+  gameConfig?: GameConfig;
   getMergeableCells: (cellId: number, targetType: any) => number[] | null;
   onAction: (cellId: number, action: ActionType) => void;
   onClose: () => void;
@@ -25,9 +28,14 @@ interface Props {
 
 const CellActionModal: React.FC<Props> = ({
   cell, isReachable, isAdjacentToWater, inventory, unlocked, actionsLeft, availableShips,
-  totalPorts, baseFarmers, respawningCount,
+  totalPorts, baseFarmers, respawningCount, gameConfig = DEFAULT_GAME_CONFIG,
   getMergeableCells, onAction, onClose,
 }) => {
+  // at(key) legge dalla config se disponibile, altrimenti usa la costante originale
+  const at = (key: string): number => {
+    const cfg = gameConfig.actionTimes as Record<string, number>;
+    return cfg[key] ?? ACTION_TIMES[key as keyof typeof ACTION_TIMES] ?? 15000;
+  };
   const canBuildHouse = inventory.wood >= COSTS.house.wood && inventory.stone >= COSTS.house.stone;
   const canBuildMine = inventory.wood >= COSTS.mine.wood && inventory.coins >= COSTS.mine.coins;
   const canPlantTree = inventory.coins >= COSTS.tree.coins;
@@ -102,7 +110,7 @@ const CellActionModal: React.FC<Props> = ({
                       cell.wildAnimalCount! >= 2 && cell.wildAnimalCount! < 10 ? 'Si stanno riproducendo passivamente (50s)...' : 'Capacità massima del branco raggiunta!'}
                   </div>
                   <button className="action-btn" style={{ background: '#c2410c', color: 'white' }} disabled={actionsLeft < 2} onClick={() => onAction(cell.id, 'hunting')}>
-                    <Crosshair size={20} /> Caccia ({ACTION_TIMES.hunting / 1000}s)
+                    <Crosshair size={20} /> Caccia ({at('\\1') / 1000}s)
                     <span className="action-badge" style={{ background: actionsLeft >= 2 ? 'rgba(255,255,255,0.2)' : '#ef4444', padding: '4px 6px' }}>
                       2<Zap size={10} style={{ display: 'inline', verticalAlign: 'middle' }} /> | 20% 🎯 | 15% <Skull size={10} style={{ display: 'inline', verticalAlign: 'middle' }} />
                     </span>
@@ -120,7 +128,7 @@ const CellActionModal: React.FC<Props> = ({
                     I lupi si muovono di notte e cacciano i conigli. Pericolosi!
                   </div>
                   <button className="action-btn" style={{ background: '#7f1d1d', color: 'white' }} disabled={actionsLeft < 3} onClick={() => onAction(cell.id, 'hunting_wolf')}>
-                    <Crosshair size={20} /> Caccia al Lupo ({ACTION_TIMES.hunting_wolf / 1000}s)
+                    <Crosshair size={20} /> Caccia al Lupo ({at('\\1') / 1000}s)
                     <span className="action-badge" style={{ background: actionsLeft >= 3 ? 'rgba(255,255,255,0.2)' : '#ef4444', padding: '4px 6px' }}>
                       3<Zap size={10} style={{ display: 'inline', verticalAlign: 'middle' }} /> | 40% <Skull size={10} style={{ display: 'inline', verticalAlign: 'middle' }} />
                     </span>
@@ -151,12 +159,12 @@ const CellActionModal: React.FC<Props> = ({
               {cell.type === 'grass' && (
                 <>
                   <button className="action-btn btn-plow" disabled={actionsLeft < 1} onClick={() => onAction(cell.id, 'plowing')}>
-                    <Tractor size={20} /> Ara Terreno ({ACTION_TIMES.plowing / 1000}s)
+                    <Tractor size={20} /> Ara Terreno ({at('\\1') / 1000}s)
                   </button>
                   {isAdjacentToWater && unlocked.port && (
                     <>
                       <button className="action-btn btn-port" disabled={actionsLeft < COSTS.port.farmers || !canBuildPort} onClick={() => onAction(cell.id, 'building_port')}>
-                        <Anchor size={20} /> Costruisci Porto ({ACTION_TIMES.building_port / 1000}s)
+                        <Anchor size={20} /> Costruisci Porto ({at('\\1') / 1000}s)
                         <span className="action-badge" style={{ background: canBuildPort && actionsLeft >= COSTS.port.farmers ? 'rgba(255,255,255,0.2)' : '#ef4444' }}>
                           20<TreePine size={10} /> 10<Mountain size={10} /> 200<Coins size={10} /> {COSTS.port.farmers}<Zap size={10} />
                         </span>
@@ -168,7 +176,7 @@ const CellActionModal: React.FC<Props> = ({
                   )}
                   {unlocked.house && (
                     <button className="action-btn btn-build" disabled={actionsLeft < COSTS.house.farmers || !canBuildHouse} onClick={() => onAction(cell.id, 'building_house')}>
-                      <Home size={20} /> Costruisci Casa ({ACTION_TIMES.building_house / 1000}s)
+                      <Home size={20} /> Costruisci Casa ({at('\\1') / 1000}s)
                       <span className="action-badge" style={{ background: canBuildHouse && actionsLeft >= COSTS.house.farmers ? 'rgba(255,255,255,0.2)' : '#ef4444' }}>
                         3<TreePine size={10} /> 6<Mountain size={10} /> {COSTS.house.farmers}<Zap size={10} />
                       </span>
@@ -176,7 +184,7 @@ const CellActionModal: React.FC<Props> = ({
                   )}
                   {unlocked.animal_farm && (
                     <button className="action-btn btn-build" disabled={actionsLeft < COSTS.animal_farm.farmers || !canBuildAnimalFarm} onClick={() => onAction(cell.id, 'building_animal_farm')}>
-                      <Warehouse size={20} /> Fattoria Animali ({ACTION_TIMES.building_animal_farm / 1000}s)
+                      <Warehouse size={20} /> Fattoria Animali ({at('\\1') / 1000}s)
                       <span className="action-badge" style={{ background: canBuildAnimalFarm && actionsLeft >= COSTS.animal_farm.farmers ? 'rgba(255,255,255,0.2)' : '#ef4444' }}>
                         5<span>🌾</span> 5<TreePine size={10} /> 5<Mountain size={10} /> 100<Coins size={10} /> {COSTS.animal_farm.farmers}<Zap size={10} />
                       </span>
@@ -184,7 +192,7 @@ const CellActionModal: React.FC<Props> = ({
                   )}
                   {unlocked.lumber_mill && (
                     <button className="action-btn btn-build" disabled={actionsLeft < COSTS.lumber_mill.farmers || !canBuildLumberMill} onClick={() => onAction(cell.id, 'building_lumber_mill')}>
-                      <Factory size={20} /> Segheria ({ACTION_TIMES.building_lumber_mill / 1000}s)
+                      <Factory size={20} /> Segheria ({at('\\1') / 1000}s)
                       <span className="action-badge" style={{ background: canBuildLumberMill && actionsLeft >= COSTS.lumber_mill.farmers ? 'rgba(255,255,255,0.2)' : '#ef4444' }}>
                         15<TreePine size={10} /> 5<Mountain size={10} /> 150<Coins size={10} /> {COSTS.lumber_mill.farmers}<Zap size={10} />
                       </span>
@@ -192,7 +200,7 @@ const CellActionModal: React.FC<Props> = ({
                   )}
                   {unlocked.stone_mason && (
                     <button className="action-btn btn-build" disabled={actionsLeft < COSTS.stone_mason.farmers || !canBuildStoneMason} onClick={() => onAction(cell.id, 'building_stone_mason')}>
-                      <Factory size={20} /> Tagliapietre ({ACTION_TIMES.building_stone_mason / 1000}s)
+                      <Factory size={20} /> Tagliapietre ({at('\\1') / 1000}s)
                       <span className="action-badge" style={{ background: canBuildStoneMason && actionsLeft >= COSTS.stone_mason.farmers ? 'rgba(255,255,255,0.2)' : '#ef4444' }}>
                         10<TreePine size={10} /> 15<Mountain size={10} /> 150<Coins size={10} /> {COSTS.stone_mason.farmers}<Zap size={10} />
                       </span>
@@ -200,7 +208,7 @@ const CellActionModal: React.FC<Props> = ({
                   )}
                   {unlocked.tree && (
                     <button className="action-btn btn-plant-forest" disabled={actionsLeft < COSTS.tree.farmers || !canPlantTree} onClick={() => onAction(cell.id, 'planting_tree')}>
-                      <TreePine size={20} /> Pianta Albero ({ACTION_TIMES.planting_tree / 1000}s)
+                      <TreePine size={20} /> Pianta Albero ({at('\\1') / 1000}s)
                       <span className="action-badge" style={{ background: canPlantTree && actionsLeft >= COSTS.tree.farmers ? 'rgba(255,255,255,0.2)' : '#ef4444' }}>
                         {COSTS.tree.coins}<Coins size={10} /> {COSTS.tree.farmers}<Zap size={10} />
                       </span>
@@ -208,7 +216,7 @@ const CellActionModal: React.FC<Props> = ({
                   )}
                   {unlocked.bush && (
                     <button className="action-btn btn-plant-forest" disabled={actionsLeft < COSTS.bush.farmers || inventory.coins < COSTS.bush.coins} onClick={() => onAction(cell.id, 'planting_bush')}>
-                      <Shrub size={20} /> Pianta Cespuglio ({ACTION_TIMES.planting_bush / 1000}s)
+                      <Shrub size={20} /> Pianta Cespuglio ({at('\\1') / 1000}s)
                       <span className="action-badge" style={{ background: inventory.coins >= COSTS.bush.coins && actionsLeft >= COSTS.bush.farmers ? 'rgba(255,255,255,0.2)' : '#ef4444' }}>
                         {COSTS.bush.coins}<Coins size={10} /> {COSTS.bush.farmers}<Zap size={10} />
                       </span>
@@ -216,7 +224,7 @@ const CellActionModal: React.FC<Props> = ({
                   )}
                   {unlocked.forest && (
                     <button className="action-btn btn-plant-forest" disabled={actionsLeft < COSTS.forest.farmers || !canPlantForest} onClick={() => onAction(cell.id, 'planting_forest')}>
-                      <div style={{ display: 'flex', marginRight: '4px' }}><TreePine size={20} /><TreePine size={20} style={{ marginLeft: '-10px' }} /></div> Pianta Bosco ({ACTION_TIMES.planting_forest / 1000}s)
+                      <div style={{ display: 'flex', marginRight: '4px' }}><TreePine size={20} /><TreePine size={20} style={{ marginLeft: '-10px' }} /></div> Pianta Bosco ({at('\\1') / 1000}s)
                       <span className="action-badge" style={{ background: canPlantForest && actionsLeft >= COSTS.forest.farmers ? 'rgba(255,255,255,0.2)' : '#ef4444' }}>
                         {COSTS.forest.stone}<Mountain size={10} /> {COSTS.forest.coins}<Coins size={10} /> {COSTS.forest.farmers}<Zap size={10} />
                       </span>
@@ -224,7 +232,7 @@ const CellActionModal: React.FC<Props> = ({
                   )}
                   {unlocked.rock && (
                     <button className="action-btn" style={{ background: '#475569', color: 'white' }} disabled={actionsLeft < COSTS.rock.farmers || !canSpawnRock} onClick={() => onAction(cell.id, 'spawn_rock')}>
-                      <Mountain size={20} /> Cerca Filone ({ACTION_TIMES.spawn_rock / 1000}s)
+                      <Mountain size={20} /> Cerca Filone ({at('\\1') / 1000}s)
                       <span className="action-badge" style={{ background: canSpawnRock && actionsLeft >= COSTS.rock.farmers ? 'rgba(255,255,255,0.2)' : '#ef4444' }}>
                         50<Coins size={10} /> {COSTS.rock.farmers}<Zap size={10} />
                       </span>
@@ -235,7 +243,7 @@ const CellActionModal: React.FC<Props> = ({
 
               {cell.type === 'plowed' && (
                 <>
-                  <p style={{ marginTop: 0, fontSize: '13px', color: '#64748b' }}>Scegli cosa piantare (Lavoro: {ACTION_TIMES.planting / 1000}s):</p>
+                  <p style={{ marginTop: 0, fontSize: '13px', color: '#64748b' }}>Scegli cosa piantare (Lavoro: {at('\\1') / 1000}s):</p>
                   {(Object.keys(CROPS) as CropId[]).map(cropKey => {
                     const crop = CROPS[cropKey];
                     const seedCount = inventory[`${crop.id}Seeds` as keyof Inventory] as number;
@@ -243,7 +251,7 @@ const CellActionModal: React.FC<Props> = ({
                       <button key={crop.id} className="action-btn" style={{ background: crop.color, color: 'white' }}
                         disabled={seedCount < 1 || actionsLeft < 1}
                         onClick={() => onAction(cell.id, `planting_${crop.id}`)}>
-                        {React.createElement(crop.icon, { size: 20 })} Pianta {crop.name} <span style={{ fontSize: '12px', opacity: 0.8 }}>- Cresce in {crop.growthTime / 1000}s</span>
+                        {React.createElement(crop.icon, { size: 20 })} Pianta {crop.name} <span style={{ fontSize: '12px', opacity: 0.8 }}>- Cresce in {(gameConfig.crops[cropKey]?.growthTime ?? crop.growthTime) / 1000}s</span>
                         <span className="action-badge">Semi: {seedCount}</span>
                       </button>
                     );
@@ -254,13 +262,13 @@ const CellActionModal: React.FC<Props> = ({
               {cell.type === 'ready' && cell.cropType && (
                 <button className="action-btn btn-harvest" disabled={actionsLeft < 1} onClick={() => onAction(cell.id, 'harvesting')}>
                   {React.createElement(CROPS[cell.cropType].icon, { size: 20 })}
-                  Raccogli {CROPS[cell.cropType].name} ({ACTION_TIMES.harvesting / 1000}s)
+                  Raccogli {CROPS[cell.cropType].name} ({at('\\1') / 1000}s)
                 </button>
               )}
 
               {cell.type === 'tree' && (
                 <button className="action-btn btn-chop" disabled={actionsLeft < 1} onClick={() => onAction(cell.id, 'chopping')}>
-                  <Axe size={20} /> Taglia Albero ({ACTION_TIMES.chopping / 1000}s)
+                  <Axe size={20} /> Taglia Albero ({at('\\1') / 1000}s)
                 </button>
               )}
 
@@ -268,10 +276,10 @@ const CellActionModal: React.FC<Props> = ({
                 <div style={{ textAlign: 'center', padding: '10px' }}>
                   <Shrub size={40} color="#15803d" fill="#16a34a" style={{ margin: '0 auto 10px' }} />
                   <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '15px' }}>
-                    Raccogliendo otterrai <b>3 bacche</b> e <b>2 semi casuali</b> (grano, pomodoro, carota o melanzana).
+                    Raccogliendo otterrai <b>{gameConfig.bushBerriesAmount} bacche</b> e <b>{gameConfig.bushSeedsAmount} semi casuali</b> (grano, pomodoro, carota o melanzana).
                   </div>
                   <button className="action-btn btn-harvest" disabled={actionsLeft < 1} onClick={() => onAction(cell.id, 'harvesting_bush')}>
-                    <Shrub size={20} /> Raccogli Bacche ({ACTION_TIMES.harvesting_bush / 1000}s)
+                    <Shrub size={20} /> Raccogli Bacche ({at('\\1') / 1000}s)
                   </button>
                 </div>
               )}
@@ -279,12 +287,12 @@ const CellActionModal: React.FC<Props> = ({
               {cell.type === 'rock' && (
                 <>
                   <button className="action-btn btn-chop" disabled={actionsLeft < 1} onClick={() => onAction(cell.id, 'mining')}>
-                    <Pickaxe size={20} /> Spacca Roccia ({ACTION_TIMES.mining / 1000}s)
+                    <Pickaxe size={20} /> Spacca Roccia ({at('\\1') / 1000}s)
                   </button>
                   <p style={{ fontSize: '11px', color: '#64748b', marginTop: '-5px', marginBottom: '10px', textAlign: 'center' }}>Può droppare: Pietra, Ferro, Rame o Oro.</p>
                   {unlocked.mine && (
                     <button className="action-btn btn-build" disabled={actionsLeft < COSTS.mine.farmers || !canBuildMine} onClick={() => onAction(cell.id, 'building_mine')}>
-                      <span>🔨</span> Costruisci Miniera ({ACTION_TIMES.building_mine / 1000}s)
+                      <span>🔨</span> Costruisci Miniera ({at('\\1') / 1000}s)
                       <span className="action-badge" style={{ background: canBuildMine && actionsLeft >= COSTS.mine.farmers ? 'rgba(255,255,255,0.2)' : '#ef4444' }}>
                         10<TreePine size={10} /> 100<Coins size={10} /> {COSTS.mine.farmers}<Zap size={10} />
                       </span>
@@ -297,7 +305,7 @@ const CellActionModal: React.FC<Props> = ({
                 <div style={{ textAlign: 'center', padding: '10px' }}>
                   <Factory size={40} color="#78350f" fill="#92400e" style={{ margin: '0 auto 10px' }} />
                   <button className="action-btn" style={{ background: '#d97706', color: 'white' }} disabled={actionsLeft < 1 || inventory.wood < 2} onClick={() => onAction(cell.id, 'crafting_planks')}>
-                    <span>📦</span> Crea Asse di Legno ({ACTION_TIMES.crafting / 1000}s)
+                    <span>📦</span> Crea Asse di Legno ({at('\\1') / 1000}s)
                     <span className="action-badge" style={{ background: inventory.wood >= 2 && actionsLeft >= 1 ? 'rgba(255,255,255,0.2)' : '#ef4444' }}>2<TreePine size={10} /></span>
                   </button>
                 </div>
@@ -307,7 +315,7 @@ const CellActionModal: React.FC<Props> = ({
                 <div style={{ textAlign: 'center', padding: '10px' }}>
                   <Factory size={40} color="#334155" fill="#475569" style={{ margin: '0 auto 10px' }} />
                   <button className="action-btn" style={{ background: '#cbd5e1', color: '#334155' }} disabled={actionsLeft < 1 || inventory.stone < 2} onClick={() => onAction(cell.id, 'crafting_bricks')}>
-                    <span>🧱</span> Crea Mattone ({ACTION_TIMES.crafting / 1000}s)
+                    <span>🧱</span> Crea Mattone ({at('\\1') / 1000}s)
                     <span className="action-badge" style={{ background: inventory.stone >= 2 && actionsLeft >= 1 ? 'rgba(0,0,0,0.1)' : '#ef4444', color: inventory.stone >= 2 && actionsLeft >= 1 ? '#334155' : 'white' }}>2<Mountain size={10} /></span>
                   </button>
                 </div>
@@ -320,7 +328,7 @@ const CellActionModal: React.FC<Props> = ({
                   {getMergeableCells(cell.id, 'house') && unlocked.village && (
                     <div style={{ marginTop: '20px' }}>
                       <button className="action-btn btn-build" disabled={actionsLeft < COSTS.village.farmers || inventory.coins < COSTS.village.coins} onClick={() => onAction(cell.id, 'building_village')}>
-                        <Tent size={20} /> Crea Villaggio ({ACTION_TIMES.building_village / 1000}s)
+                        <Tent size={20} /> Crea Villaggio ({at('\\1') / 1000}s)
                         <span className="action-badge" style={{ background: actionsLeft >= COSTS.village.farmers && inventory.coins >= COSTS.village.coins ? 'rgba(255,255,255,0.2)' : '#ef4444' }}>
                           {COSTS.village.coins}<Coins size={10} /> {COSTS.village.farmers}<Zap size={10} />
                         </span>
@@ -338,7 +346,7 @@ const CellActionModal: React.FC<Props> = ({
                   {getMergeableCells(cell.id, 'village') && unlocked.city && (
                     <div style={{ marginTop: '20px' }}>
                       <button className="action-btn btn-build" disabled={actionsLeft < COSTS.city.farmers || inventory.coins < COSTS.city.coins} onClick={() => onAction(cell.id, 'building_city')}>
-                        <Castle size={20} /> Crea Città ({ACTION_TIMES.building_city / 1000}s)
+                        <Castle size={20} /> Crea Città ({at('\\1') / 1000}s)
                         <span className="action-badge" style={{ background: actionsLeft >= COSTS.city.farmers && inventory.coins >= COSTS.city.coins ? 'rgba(255,255,255,0.2)' : '#ef4444' }}>
                           {COSTS.city.coins}<Coins size={10} /> {COSTS.city.farmers}<Zap size={10} />
                         </span>
@@ -356,7 +364,7 @@ const CellActionModal: React.FC<Props> = ({
                   {getMergeableCells(cell.id, 'city') && unlocked.county && (
                     <div style={{ marginTop: '20px' }}>
                       <button className="action-btn btn-build" disabled={actionsLeft < COSTS.county.farmers || inventory.coins < COSTS.county.coins} onClick={() => onAction(cell.id, 'building_county')}>
-                        <Landmark size={20} /> Crea Contea ({ACTION_TIMES.building_county / 1000}s)
+                        <Landmark size={20} /> Crea Contea ({at('\\1') / 1000}s)
                         <span className="action-badge" style={{ background: actionsLeft >= COSTS.county.farmers && inventory.coins >= COSTS.county.coins ? 'rgba(255,255,255,0.2)' : '#ef4444' }}>
                           {COSTS.county.coins}<Coins size={10} /> {COSTS.county.farmers}<Zap size={10} />
                         </span>

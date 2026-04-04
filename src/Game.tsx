@@ -1418,6 +1418,7 @@ const Game: React.FC = () => {
           totalPorts={totalPorts}
           baseFarmers={baseFarmers}
           respawningCount={respawningFarmers.length}
+          gameConfig={gameConfig}
           getMergeableCells={(cellId, targetType) => getMergeableCells(cellId, targetType, grid)}
           onAction={startAction}
           onClose={() => setSelectedCell(null)}
